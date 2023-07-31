@@ -15,6 +15,8 @@ func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 		return NewFeatureViewIGraphDao(config)
 	} else if config.DatasourceType == common.Datasource_Type_Redis {
 		return NewFeatureViewRedisDao(config)
+	} else if config.DatasourceType == common.Datasource_Type_OTS {
+		return NewFeatureViewOTSDao(config)
 	}
 
 	panic("not found FeatureViewDao implement")

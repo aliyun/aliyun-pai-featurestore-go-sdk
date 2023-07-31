@@ -6,6 +6,7 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/hologres"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/igraph"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/mysqldb"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/ots"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/redisdb"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger/common"
@@ -61,7 +62,14 @@ func NewProject(p *swagger.Project) *Project {
 		}
 		redisdb.RegisterRedis(onlineStore.Name, p.OnlineDataSource.VpcAddress, p.OnlineDataSource.Pwd, db)
 		project.OnlineStore = onlineStore
+	case common.Datasource_Type_OTS:
+		onlineStore := &OTSOnlineStore{
+			Datasource: p.OnlineDataSource,
+		}
 
+		client := onlineStore.Datasource.NewOTSClient()
+		ots.RegisterOTSClient(onlineStore.Name, client)
+		project.OnlineStore = onlineStore
 	default:
 		panic("not support onlinestore type")
 	}

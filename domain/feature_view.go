@@ -105,7 +105,23 @@ func NewFeatureView(view *swagger.FeatureView, p *Project, entity *FeatureEntity
 		}
 		daoConfig.Fields = fields
 		daoConfig.FieldTypeMap = fieldTypeMap
+	case common.Datasource_Type_OTS:
+		daoConfig.OtsTableName = p.OnlineStore.GetTableName(featureView)
+		daoConfig.OtsName = p.OnlineStore.GetDatasourceName()
+		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
+		for _, field := range view.Fields {
+			if field.IsPrimaryKey {
+				fieldTypeMap[field.Name] = constants.FSType(field.Type)
+			} else if field.IsPartition {
+				continue
+			} else {
+				fieldTypeMap[field.Name] = constants.FSType(field.Type)
+			}
+		}
+		daoConfig.FieldTypeMap = fieldTypeMap
+
 	default:
+
 	}
 	featureViewDao := dao.NewFeatureViewDao(daoConfig)
 	featureView.featureViewDao = featureViewDao
