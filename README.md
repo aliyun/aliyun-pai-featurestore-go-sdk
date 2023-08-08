@@ -1,2 +1,2 @@
 # aliyun-pai-featurestore-go-sdk
-PAI FeatureSotre go sdk
+PAI-Feature Store Go Sdk

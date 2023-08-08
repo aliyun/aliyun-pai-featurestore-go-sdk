@@ -9,4 +9,5 @@ const (
 	Datasource_Type_Mysql      = "mysql"
 	Datasource_Type_IGraph     = "igraph"
 	Datasource_Type_Spark      = "spark"
+	Datasource_Type_OTS        = "ots"
 )

@@ -27,6 +27,10 @@ type DaoConfig struct {
 	HologresName      string
 	HologresTableName string
 
+	//ots
+	OtsName      string
+	OtsTableName string
+
 	// clickhouse
 	ClickHouseName      string
 	ClickHouseTableName string
@@ -44,7 +48,8 @@ type DaoConfig struct {
 	LabelName         string
 	SaveOriginalField bool
 
-	FieldMap     map[string]string
+	FieldMap map[string]string
+	// redis, ots
 	FieldTypeMap map[string]constants.FSType
 
 	// redis
