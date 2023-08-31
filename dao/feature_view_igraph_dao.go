@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	aligraph "github.com/aliyun/aliyun-igraph-go-sdk"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/constants"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/igraph"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/utils"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/igraph"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
 type FeatureViewIGraphDao struct {

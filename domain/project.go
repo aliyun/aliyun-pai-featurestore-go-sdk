@@ -1,26 +1,22 @@
 package domain
 
 import (
-	"strconv"
-
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/hologres"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/igraph"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/mysqldb"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/ots"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/redisdb"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger/common"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/hologres"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/igraph"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/ots"
 )
 
 type Project struct {
-	*swagger.Project
+	*api.Project
 	OnlineStore      OnlineStore
 	FeatureViewMap   map[string]*FeatureView
 	FeatureEntityMap map[string]*FeatureEntity
 	ModelMap         map[string]*Model
 }
 
-func NewProject(p *swagger.Project) *Project {
+func NewProject(p *api.Project) *Project {
 	project := Project{
 		Project:          p,
 		FeatureViewMap:   make(map[string]*FeatureView),
@@ -29,40 +25,22 @@ func NewProject(p *swagger.Project) *Project {
 	}
 
 	switch p.OnlineDatasourceType {
-	case common.Datasource_Type_Hologres:
+	case constants.Datasource_Type_Hologres:
 		onlineStore := &HologresOnlineStore{
 			Datasource: p.OnlineDataSource,
 		}
-		dsn := onlineStore.Datasource.GenerateDSN(common.Datasource_Type_Hologres)
+		dsn := onlineStore.Datasource.GenerateDSN(constants.Datasource_Type_Hologres)
 		hologres.RegisterHologres(onlineStore.Name, dsn)
 		project.OnlineStore = onlineStore
-	case common.Datasource_Type_Mysql:
-		onlineStore := &MysqlOnlineStore{
-			Datasource: p.OnlineDataSource,
-		}
-		dsn := onlineStore.Datasource.GenerateDSN(common.Datasource_Type_Mysql)
-		mysqldb.RegisterMysql(onlineStore.Name, dsn)
-		project.OnlineStore = onlineStore
-	case common.Datasource_Type_IGraph:
+	case constants.Datasource_Type_IGraph:
 		onlineStore := &IGraphOnlineStore{
 			Datasource: p.OnlineDataSource,
 		}
 
-		client := igraph.NewGraphClient(p.OnlineDataSource.VpcAddress, p.OnlineDataSource.MysqlUser, p.OnlineDataSource.MysqlPwd)
+		client := igraph.NewGraphClient(p.OnlineDataSource.VpcAddress, p.OnlineDataSource.User, p.OnlineDataSource.Pwd)
 		igraph.RegisterGraphClient(onlineStore.Name, client)
 		project.OnlineStore = onlineStore
-	case common.Datasource_Type_Redis:
-		onlineStore := &RedisOnlineStore{
-			Datasource: p.OnlineDataSource,
-		}
-
-		db := 0
-		if dbv, err := strconv.Atoi(p.OnlineDataSource.Database); err == nil {
-			db = dbv
-		}
-		redisdb.RegisterRedis(onlineStore.Name, p.OnlineDataSource.VpcAddress, p.OnlineDataSource.Pwd, db)
-		project.OnlineStore = onlineStore
-	case common.Datasource_Type_OTS:
+	case constants.Datasource_Type_TableStore:
 		onlineStore := &OTSOnlineStore{
 			Datasource: p.OnlineDataSource,
 		}
@@ -86,5 +64,8 @@ func (p *Project) GetFeatureEntity(name string) *FeatureEntity {
 }
 
 func (p *Project) GetModel(name string) *Model {
+	return p.ModelMap[name]
+}
+func (p *Project) GetModelFeature(name string) *Model {
 	return p.ModelMap[name]
 }

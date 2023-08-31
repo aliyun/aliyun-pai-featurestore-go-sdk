@@ -4,23 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/constants"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/dao"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger/common"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
 )
 
 type FeatureView struct {
-	*swagger.FeatureView
+	*api.FeatureView
 	Project         *Project
 	FeatureEntity   *FeatureEntity
 	featureFields   []string
-	primaryKeyField swagger.FeatureViewFields
-	eventTimeField  swagger.FeatureViewFields
+	primaryKeyField api.FeatureViewFields
+	eventTimeField  api.FeatureViewFields
 	featureViewDao  dao.FeatureViewDao
 }
 
-func NewFeatureView(view *swagger.FeatureView, p *Project, entity *FeatureEntity) *FeatureView {
+func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) *FeatureView {
 	featureView := &FeatureView{
 		FeatureView:   view,
 		Project:       p,
@@ -28,11 +27,11 @@ func NewFeatureView(view *swagger.FeatureView, p *Project, entity *FeatureEntity
 	}
 	for _, field := range view.Fields {
 		if field.IsEventTime {
-			featureView.eventTimeField = field
+			featureView.eventTimeField = *field
 		} else if field.IsPartition {
 			continue
 		} else if field.IsPrimaryKey {
-			featureView.primaryKeyField = field
+			featureView.primaryKeyField = *field
 		} else {
 			featureView.featureFields = append(featureView.featureFields, field.Name)
 		}
@@ -46,13 +45,10 @@ func NewFeatureView(view *swagger.FeatureView, p *Project, entity *FeatureEntity
 		SaveOriginalField: false,
 	}
 	switch p.OnlineDatasourceType {
-	case common.Datasource_Type_Hologres:
+	case constants.Datasource_Type_Hologres:
 		daoConfig.HologresTableName = p.OnlineStore.GetTableName(featureView)
 		daoConfig.HologresName = p.OnlineStore.GetDatasourceName()
-	case common.Datasource_Type_Mysql:
-		daoConfig.MysqlTableName = p.OnlineStore.GetTableName(featureView)
-		daoConfig.MysqlName = p.OnlineStore.GetDatasourceName()
-	case common.Datasource_Type_IGraph:
+	case constants.Datasource_Type_IGraph:
 		if view.Config != "" {
 			configM := make(map[string]interface{})
 			if err := json.Unmarshal([]byte(view.Config), &configM); err == nil {
@@ -88,24 +84,7 @@ func NewFeatureView(view *swagger.FeatureView, p *Project, entity *FeatureEntity
 		}
 		daoConfig.FieldMap = fieldMap
 		daoConfig.FieldTypeMap = fieldTypeMap
-	case common.Datasource_Type_Redis:
-		daoConfig.RedisPrefix = p.OnlineStore.GetTableName(featureView)
-		daoConfig.RedisName = p.OnlineStore.GetDatasourceName()
-		fields := make([]string, 0, len(view.Fields))
-		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
-		for _, field := range view.Fields {
-			if field.IsPrimaryKey {
-				fieldTypeMap[field.Name] = constants.FSType(field.Type)
-			} else if field.IsPartition {
-				continue
-			} else {
-				fields = append(fields, field.Name)
-				fieldTypeMap[field.Name] = constants.FSType(field.Type)
-			}
-		}
-		daoConfig.Fields = fields
-		daoConfig.FieldTypeMap = fieldTypeMap
-	case common.Datasource_Type_OTS:
+	case constants.Datasource_Type_TableStore:
 		daoConfig.OtsTableName = p.OnlineStore.GetTableName(featureView)
 		daoConfig.OtsName = p.OnlineStore.GetDatasourceName()
 		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))

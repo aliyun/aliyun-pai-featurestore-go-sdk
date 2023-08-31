@@ -3,11 +3,11 @@ package domain
 import (
 	"fmt"
 
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 )
 
 type OTSOnlineStore struct {
-	*swagger.Datasource
+	*api.Datasource
 }
 
 func (s *OTSOnlineStore) GetTableName(featureView *FeatureView) string {

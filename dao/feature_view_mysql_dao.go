@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/huandu/go-sqlbuilder"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/mysqldb"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/mysqldb"
 )
 
 type FeatureViewMysqlDao struct {

@@ -11,3 +11,12 @@ const (
 	FS_BOOLEAN
 	FS_TIMESTAMP
 )
+const (
+	Datasource_Type_MaxCompute = "maxcompute"
+	Datasource_Type_Hologres   = "hologres"
+	Datasource_Type_Redis      = "redis"
+	Datasource_Type_Mysql      = "mysql"
+	Datasource_Type_IGraph     = "igraph"
+	Datasource_Type_Spark      = "spark"
+	Datasource_Type_TableStore = "tablestore"
+)

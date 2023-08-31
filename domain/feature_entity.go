@@ -1,14 +1,16 @@
 package domain
 
-import "github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
+import (
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+)
 
 type FeatureEntity struct {
-	*swagger.FeatureEntity
+	*api.FeatureEntity
 }
 
-func NewFeatureEntity(entity swagger.FeatureEntity) *FeatureEntity {
+func NewFeatureEntity(entity *api.FeatureEntity) *FeatureEntity {
 	featureEntity := &FeatureEntity{
-		FeatureEntity: &entity,
+		FeatureEntity: entity,
 	}
 	return featureEntity
 }

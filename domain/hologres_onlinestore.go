@@ -3,11 +3,11 @@ package domain
 import (
 	"fmt"
 
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 )
 
 type HologresOnlineStore struct {
-	*swagger.Datasource
+	*api.Datasource
 }
 
 func (s *HologresOnlineStore) GetTableName(featureView *FeatureView) string {

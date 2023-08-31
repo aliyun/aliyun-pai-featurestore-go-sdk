@@ -1,16 +1,12 @@
 package featurestore
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/antihax/optional"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/domain"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger/common"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/domain"
 )
 
 type ClientOption func(c *FeatureStoreClient)
@@ -26,19 +22,24 @@ func WithErrorLogger(l Logger) ClientOption {
 		e.ErrorLogger = l
 	}
 }
-func WithToken(token string) ClientOption {
+
+// WithDomain set custom domain
+func WithDomain(domian string) ClientOption {
 	return func(e *FeatureStoreClient) {
-		e.Token = token
+		e.domain = domian
+	}
+}
+func WithLoopData(loopLoad bool) ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.loopLoadData = loopLoad
 	}
 }
 
 type FeatureStoreClient struct {
-	// Host FeatureStore server host
-	Host string
-	// Token the request header Authorization
-	Token string
+	loopLoadData bool
+	domain       string
 
-	APIClient *swagger.APIClient
+	client *api.APIClient
 
 	projectMap map[string]*domain.Project
 
@@ -49,34 +50,46 @@ type FeatureStoreClient struct {
 	ErrorLogger Logger
 }
 
-func NewFeatureStoreClient(host string, opts ...ClientOption) (*FeatureStoreClient, error) {
+func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
 	client := FeatureStoreClient{
-		Host:       host,
-		projectMap: make(map[string]*domain.Project, 0),
+		projectMap:   make(map[string]*domain.Project, 0),
+		loopLoadData: true,
 	}
 
 	for _, opt := range opts {
 		opt(&client)
 	}
 
+	cfg := api.NewConfiguration(regionId, accessKeyId, accessKeySecret, projectName)
+	if client.domain != "" {
+		cfg.SetDomain(client.domain)
+	}
+
+	apiClient, err := api.NewAPIClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	client.client = apiClient
+
 	if err := client.Validate(); err != nil {
 		return nil, err
 	}
 
-	cfg := swagger.NewConfiguration(client.Host, client.Token)
-	client.APIClient = swagger.NewAPIClient(cfg)
-
 	client.LoadProjectData()
 
-	go client.loopLoadProjectData()
+	if client.loopLoadData {
+		go client.loopLoadProjectData()
+	}
 
 	return &client, nil
 }
 
 // Validate check the  FeatureStoreClient value
 func (e *FeatureStoreClient) Validate() error {
-	if e.Host == "" {
-		return errors.New("host is empty")
+	// check instance
+	if err := e.client.InstanceApi.GetInstance(); err != nil {
+		return err
 	}
 
 	return nil
@@ -104,55 +117,40 @@ func (c *FeatureStoreClient) logError(err error) {
 
 // LoadProjectData specifies a function to load data from featurestore server
 func (c *FeatureStoreClient) LoadProjectData() {
+	ak := api.Ak{
+		AccesskeyId:     c.client.GetConfig().AccessKeyId,
+		AccesskeySecret: c.client.GetConfig().AccessKeySecret,
+	}
 	projectData := make(map[string]*domain.Project, 0)
 
-	listProjectsResponse, err := c.APIClient.FsProjectApi.ListProjects(context.Background())
+	listProjectsResponse, err := c.client.FsProjectApi.ListProjects()
 	if err != nil {
 		c.logError(fmt.Errorf("list projects error, err=%v", err))
 		return
 	}
 
-	if listProjectsResponse.Code != common.CODE_OK {
-		c.logError(fmt.Errorf("list projects error, requestid=%s,code=%s, msg=%s", listProjectsResponse.RequestId, listProjectsResponse.Code, listProjectsResponse.Message))
-		return
-	}
-	for _, p := range listProjectsResponse.Data["projects"] {
+	for _, p := range listProjectsResponse.Projects {
 		// get datasource
-		getDataSourceResponse, err := c.APIClient.DatasourceApi.DatasourceDatasourceIdGet(context.Background(), p.OnlineDatasourceId)
+		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId)
 		if err != nil {
 			c.logError(fmt.Errorf("get datasource error, err=%v", err))
 			continue
 		}
 
-		if getDataSourceResponse.Code != common.CODE_OK {
-			c.logError(fmt.Errorf("get datasource error, requestid=%s,code=%s, msg=%s", getDataSourceResponse.RequestId, getDataSourceResponse.Code, getDataSourceResponse.Message))
-			continue
-		}
-
-		p.OnlineDataSource = getDataSourceResponse.Data["datasource"]
-		if p.OnlineDataSource.AkId > 0 {
-			// get ak
-			getAkResponse, err := c.APIClient.AkApi.AkAkIdGet(context.Background(), int64(p.OnlineDataSource.AkId))
-			if err == nil && getAkResponse.Code == common.CODE_OK {
-				p.OnlineDataSource.Ak = getAkResponse.Data["ak"]
-			}
-		}
+		p.OnlineDataSource = getDataSourceResponse.Datasource
+		p.OnlineDataSource.Ak = ak
 
 		project := domain.NewProject(p)
 		projectData[project.ProjectName] = project
 
 		// get feature entities
-		listFeatureEntitiesResponse, err := c.APIClient.FeatureEntityApi.ListFeatureEntities(context.Background())
+		listFeatureEntitiesResponse, err := c.client.FeatureEntityApi.ListFeatureEntities(strconv.Itoa(p.ProjectId))
 		if err != nil {
 			c.logError(fmt.Errorf("list feature entities error, err=%v", err))
 			continue
 		}
-		if listFeatureEntitiesResponse.Code != common.CODE_OK {
-			c.logError(fmt.Errorf("list feature entities error, requestid=%s,code=%s, msg=%s", listFeatureEntitiesResponse.RequestId, listFeatureEntitiesResponse.Code, listFeatureEntitiesResponse.Message))
-			continue
-		}
 
-		for _, entity := range listFeatureEntitiesResponse.Data["feature_entities"] {
+		for _, entity := range listFeatureEntitiesResponse.FeatureEntities {
 			if entity.ProjectId == project.ProjectId {
 				project.FeatureEntityMap[entity.FeatureEntityName] = domain.NewFeatureEntity(entity)
 			}
@@ -164,36 +162,25 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		)
 		// get feature views
 		for {
-			listFeatureViews, err := c.APIClient.FeatureViewApi.ListFeatureViews(context.Background(), &swagger.FeatureViewApiListFeatureViewsOpts{Pagesize: optional.NewInt32(int32(pagesize)),
-				Pagenumber: optional.NewInt32(int32(pagenumber)), ProjectId: optional.NewInt32(int32(project.ProjectId))})
+			listFeatureViews, err := c.client.FeatureViewApi.ListFeatureViews(int32(pagesize), int32(pagenumber), strconv.Itoa(p.ProjectId))
 			if err != nil {
 				c.logError(fmt.Errorf("list feature views error, err=%v", err))
 				continue
 			}
-			if listFeatureViews.Code != common.CODE_OK {
-				c.logError(fmt.Errorf("list feature views error, requestid=%s,code=%s, msg=%s", listFeatureViews.RequestId, listFeatureViews.Code, listFeatureViews.Message))
-				continue
-			}
 
-			for _, view := range listFeatureViews.Data.FeatureViews {
-				getFeatureViewResponse, err := c.APIClient.FeatureViewApi.GetFeatureViewByID(context.Background(), strconv.Itoa(int(view.FeatureViewId)))
+			for _, view := range listFeatureViews.FeatureViews {
+				getFeatureViewResponse, err := c.client.FeatureViewApi.GetFeatureViewByID(strconv.Itoa(int(view.FeatureViewId)))
 				if err != nil {
 					c.logError(fmt.Errorf("get feature view error, err=%v", err))
 					continue
 				}
-				if getFeatureViewResponse.Code != common.CODE_OK {
-					c.logError(fmt.Errorf("get feature view error, requestid=%s,code=%s, msg=%s", getFeatureViewResponse.RequestId, getFeatureViewResponse.Code, getFeatureViewResponse.Message))
-					continue
-				}
-				if len(getFeatureViewResponse.Data["feature_views"]) == 1 {
-					featureView := getFeatureViewResponse.Data["feature_views"][0]
-					featureViewDomain := domain.NewFeatureView(&featureView, project, project.FeatureEntityMap[featureView.FeatureEntityName])
-					project.FeatureViewMap[featureView.Name] = featureViewDomain
-				}
+				featureView := getFeatureViewResponse.FeatureView
+				featureViewDomain := domain.NewFeatureView(featureView, project, project.FeatureEntityMap[featureView.FeatureEntityName])
+				project.FeatureViewMap[featureView.Name] = featureViewDomain
 
 			}
 
-			if len(listFeatureViews.Data.FeatureViews) == 0 || pagesize*pagenumber > listFeatureViews.Data.TotalCount {
+			if len(listFeatureViews.FeatureViews) == 0 || pagesize*pagenumber > listFeatureViews.TotalCount {
 				break
 			}
 
@@ -204,36 +191,25 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		pagenumber = 1
 		// get model
 		for {
-			listModelsResponse, err := c.APIClient.FsModelApi.ListModels(context.Background(), &swagger.FsModelApiListModelsOpts{Pagesize: optional.NewInt32(int32(pagesize)),
-				Pagenumber: optional.NewInt32(int32(pagenumber)), ProjectId: optional.NewInt32(int32(project.ProjectId))})
+			listModelsResponse, err := c.client.FsModelApi.ListModels(pagesize, pagenumber, strconv.Itoa(project.ProjectId))
 			if err != nil {
 				c.logError(fmt.Errorf("list models error, err=%v", err))
 				continue
 			}
-			if listModelsResponse.Code != common.CODE_OK {
-				c.logError(fmt.Errorf("list models error, requestid=%s,code=%s, msg=%s", listModelsResponse.RequestId, listModelsResponse.Code, listModelsResponse.Message))
-				continue
-			}
 
-			for _, m := range listModelsResponse.Data.Models {
-				getModelResponse, err := c.APIClient.FsModelApi.GetModelByID(context.Background(), strconv.Itoa(m.ModelId))
+			for _, m := range listModelsResponse.Models {
+				getModelResponse, err := c.client.FsModelApi.GetModelByID(strconv.Itoa(m.ModelId))
 				if err != nil {
 					c.logError(fmt.Errorf("get model error, err=%v", err))
 					continue
 				}
-				if getModelResponse.Code != common.CODE_OK {
-					c.logError(fmt.Errorf("get model error, requestid=%s,code=%s, msg=%s", getModelResponse.RequestId, getModelResponse.Code, getModelResponse.Message))
-					continue
-				}
-				if len(getModelResponse.Data.Models) == 1 {
-					model := getModelResponse.Data.Models[0]
-					modelDomain := domain.NewModel(&model, project)
-					project.ModelMap[model.Name] = modelDomain
-				}
+				model := getModelResponse.Model
+				modelDomain := domain.NewModel(model, project)
+				project.ModelMap[model.Name] = modelDomain
 
 			}
 
-			if len(listModelsResponse.Data.Models) == 0 || pagenumber*pagesize > int(listModelsResponse.Data.TotalCount) {
+			if len(listModelsResponse.Models) == 0 || pagenumber*pagesize > int(listModelsResponse.TotalCount) {
 				break
 			}
 

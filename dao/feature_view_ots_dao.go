@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/constants"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/ots"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/ots"
 	"github.com/aliyun/aliyun-tablestore-go-sdk/tablestore"
 )
 
