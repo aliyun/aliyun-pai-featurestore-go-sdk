@@ -1,9 +1,9 @@
 package domain
 
-import "github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
+import "github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 
 type IGraphOnlineStore struct {
-	*swagger.Datasource
+	*api.Datasource
 }
 
 func (s *IGraphOnlineStore) GetTableName(featureView *FeatureView) string {

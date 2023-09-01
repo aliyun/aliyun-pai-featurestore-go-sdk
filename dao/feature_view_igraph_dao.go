@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	aligraph "github.com/aliyun/aliyun-igraph-go-sdk"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/constants"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/igraph"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/utils"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/igraph"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
 type FeatureViewIGraphDao struct {
@@ -83,7 +83,7 @@ func (d *FeatureViewIGraphDao) GetFeatures(keys []interface{}, selectFields []st
 
 				switch d.fieldTypeMap[field] {
 				case constants.FS_DOUBLE, constants.FS_FLOAT:
-					properties[d.fieldMap[field]] = utils.ToFloat(value, 0)
+					properties[d.fieldMap[field]] = utils.ToFloat(value, -1024)
 				case constants.FS_INT32, constants.FS_INT64:
 					properties[d.fieldMap[field]] = utils.ToInt(value, -1024)
 				default:

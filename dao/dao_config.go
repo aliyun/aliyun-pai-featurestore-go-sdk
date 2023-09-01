@@ -1,6 +1,6 @@
 package dao
 
-import "github.com/aliyun/aliyun-pai-featurestore-go-sdk/constants"
+import "github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 
 type DaoConfig struct {
 	DatasourceType      string

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/swagger"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/utils"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
 type Model struct {
-	*swagger.Model
+	*api.Model
 	project                 *Project
 	featureViewMap          map[string]*FeatureView
 	featureEntityMap        map[string]*FeatureEntity
@@ -19,7 +19,7 @@ type Model struct {
 	featureEntityJoinIdList []string
 }
 
-func NewModel(model *swagger.Model, p *Project) *Model {
+func NewModel(model *api.Model, p *Project) *Model {
 	m := &Model{
 		Model:                  model,
 		project:                p,

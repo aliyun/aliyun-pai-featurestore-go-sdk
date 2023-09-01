@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/constants"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/datasource/redisdb"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/utils"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/redisdb"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
 type FeatureViewRedisDao struct {

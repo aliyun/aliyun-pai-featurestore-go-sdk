@@ -1,6 +1,9 @@
 package utils
 
-import "strconv"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 func ToInt(i interface{}, defaultVal int) int {
 	switch value := i.(type) {
@@ -17,6 +20,12 @@ func ToInt(i interface{}, defaultVal int) int {
 	case string:
 		if val, err := strconv.Atoi(value); err == nil {
 			return val
+		} else {
+			return defaultVal
+		}
+	case json.Number:
+		if val, err := value.Int64(); err == nil {
+			return int(val)
 		} else {
 			return defaultVal
 		}
@@ -44,6 +53,12 @@ func ToFloat(i interface{}, defaultVal float64) float64 {
 		} else {
 			return defaultVal
 		}
+	case json.Number:
+		if f, err := value.Float64(); err == nil {
+			return f
+		} else {
+			return defaultVal
+		}
 	default:
 		return defaultVal
 	}
@@ -66,6 +81,12 @@ func ToInt64(i interface{}, defaultVal int64) int64 {
 		} else {
 			return defaultVal
 		}
+	case json.Number:
+		if val, err := value.Int64(); err == nil {
+			return val
+		} else {
+			return defaultVal
+		}
 	default:
 		return defaultVal
 	}
@@ -83,6 +104,8 @@ func ToString(i interface{}, defaultVal string) string {
 		return strconv.FormatInt(value, 10)
 	case string:
 		return value
+	case json.Number:
+		return value.String()
 	default:
 		return defaultVal
 	}
