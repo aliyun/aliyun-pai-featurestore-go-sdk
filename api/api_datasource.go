@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,6 +43,13 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int) (GetD
 		//datasource.VpcAddress = fmt.Sprintf("%s-%s.hologres.aliyuncs.com:80", uris[0], a.client.cfg.regionId)
 	case "GraphCompute":
 		datasource.Type = constants.Datasource_Type_IGraph
+		var config map[string]string
+		if err := json.Unmarshal([]byte(*response.Body.Config), &config); err == nil {
+			datasource.VpcAddress = config["address"]
+			datasource.User = config["username"]
+			datasource.Pwd = config["password"]
+		}
+		datasource.RdsInstanceId = *response.Body.Uri
 	case "Tablestore":
 		datasource.Type = constants.Datasource_Type_TableStore
 		datasource.VpcAddress = fmt.Sprintf("https://%s.%s.vpc.tablestore.aliyuncs.com", *response.Body.Uri, a.client.cfg.regionId)

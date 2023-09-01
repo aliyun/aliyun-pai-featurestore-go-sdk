@@ -29,15 +29,28 @@ func WithDomain(domian string) ClientOption {
 		e.domain = domian
 	}
 }
+
 func WithLoopData(loopLoad bool) ClientOption {
 	return func(e *FeatureStoreClient) {
 		e.loopLoadData = loopLoad
 	}
 }
 
+func WithNoDatasourceInitClient() ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.datasourceInitClient = false
+	}
+
+}
+
 type FeatureStoreClient struct {
+	// loopLoadData flag to invoke loopLoadProjectData  function
 	loopLoadData bool
-	domain       string
+
+	// datasourceInitClient flag to init onlinestore  client
+	datasourceInitClient bool
+
+	domain string
 
 	client *api.APIClient
 
@@ -52,8 +65,9 @@ type FeatureStoreClient struct {
 
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
 	client := FeatureStoreClient{
-		projectMap:   make(map[string]*domain.Project, 0),
-		loopLoadData: true,
+		projectMap:           make(map[string]*domain.Project, 0),
+		loopLoadData:         true,
+		datasourceInitClient: true,
 	}
 
 	for _, opt := range opts {
@@ -140,7 +154,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		p.OnlineDataSource = getDataSourceResponse.Datasource
 		p.OnlineDataSource.Ak = ak
 
-		project := domain.NewProject(p)
+		project := domain.NewProject(p, c.datasourceInitClient)
 		projectData[project.ProjectName] = project
 
 		// get feature entities

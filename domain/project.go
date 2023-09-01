@@ -16,7 +16,7 @@ type Project struct {
 	ModelMap         map[string]*Model
 }
 
-func NewProject(p *api.Project) *Project {
+func NewProject(p *api.Project, isInitClient bool) *Project {
 	project := Project{
 		Project:          p,
 		FeatureViewMap:   make(map[string]*FeatureView),
@@ -29,24 +29,30 @@ func NewProject(p *api.Project) *Project {
 		onlineStore := &HologresOnlineStore{
 			Datasource: p.OnlineDataSource,
 		}
-		dsn := onlineStore.Datasource.GenerateDSN(constants.Datasource_Type_Hologres)
-		hologres.RegisterHologres(onlineStore.Name, dsn)
+		if isInitClient {
+			dsn := onlineStore.Datasource.GenerateDSN(constants.Datasource_Type_Hologres)
+			hologres.RegisterHologres(onlineStore.Name, dsn)
+		}
 		project.OnlineStore = onlineStore
 	case constants.Datasource_Type_IGraph:
 		onlineStore := &IGraphOnlineStore{
 			Datasource: p.OnlineDataSource,
 		}
 
-		client := igraph.NewGraphClient(p.OnlineDataSource.VpcAddress, p.OnlineDataSource.User, p.OnlineDataSource.Pwd)
-		igraph.RegisterGraphClient(onlineStore.Name, client)
+		if isInitClient {
+			client := igraph.NewGraphClient(p.OnlineDataSource.VpcAddress, p.OnlineDataSource.User, p.OnlineDataSource.Pwd)
+			igraph.RegisterGraphClient(onlineStore.Name, client)
+		}
 		project.OnlineStore = onlineStore
 	case constants.Datasource_Type_TableStore:
 		onlineStore := &OTSOnlineStore{
 			Datasource: p.OnlineDataSource,
 		}
 
-		client := onlineStore.Datasource.NewOTSClient()
-		ots.RegisterOTSClient(onlineStore.Name, client)
+		if isInitClient {
+			client := onlineStore.Datasource.NewOTSClient()
+			ots.RegisterOTSClient(onlineStore.Name, client)
+		}
 		project.OnlineStore = onlineStore
 	default:
 		panic("not support onlinestore type")

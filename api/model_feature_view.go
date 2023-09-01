@@ -15,5 +15,6 @@ type FeatureView struct {
 	Ttl               int                  `json:"ttl"`
 	Tags              []string             `json:"tags"`
 	Config            string               `json:"config"`
+	LasySyncConfig    *string              `json:"last_sync_config"`
 	Fields            []*FeatureViewFields `json:"fields"`
 }
