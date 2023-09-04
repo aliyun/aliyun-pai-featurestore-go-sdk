@@ -154,6 +154,15 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		p.OnlineDataSource = getDataSourceResponse.Datasource
 		p.OnlineDataSource.Ak = ak
 
+		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId)
+		if err != nil {
+			c.logError(fmt.Errorf("get datasource error, err=%v", err))
+			continue
+		}
+
+		p.OfflineDataSource = getDataSourceResponse.Datasource
+		p.OfflineDataSource.Ak = ak
+
 		project := domain.NewProject(p, c.datasourceInitClient)
 		projectData[project.ProjectName] = project
 

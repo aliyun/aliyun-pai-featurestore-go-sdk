@@ -39,7 +39,13 @@ func (a *FeatureViewApiService) GetFeatureViewByID(featureViewId string) (GetFea
 		Online:            *response.Body.SyncOnlineTable,
 		Ttl:               int(*response.Body.TTL),
 		Config:            *response.Body.Config,
-		LasySyncConfig:    response.Body.LastSyncConfig,
+	}
+	if response.Body.RegisterTable != nil && *response.Body.RegisterTable != "" {
+		featureView.RegisterTable = *response.Body.RegisterTable
+		featureView.IsRegister = true
+	}
+	if response.Body.LastSyncConfig != nil && *response.Body.LastSyncConfig != "" {
+		featureView.LasySyncConfig = *response.Body.LastSyncConfig
 	}
 	featureView.FeatureViewId, _ = strconv.Atoi(featureViewId)
 

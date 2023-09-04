@@ -13,6 +13,6 @@ type Project struct {
 	FeatureViewCount      int32  `json:"feature_view_count,omitempty"`
 	ModelCount            int32  `json:"model_count,omitempty"`
 
-	OfflineDataSource *Datasource `json:"-"`
-	OnlineDataSource  *Datasource `json:"-"`
+	OfflineDataSource *Datasource `json:"offline_datasource,omitempty"`
+	OnlineDataSource  *Datasource `json:"online_datasource,omitempty"`
 }
