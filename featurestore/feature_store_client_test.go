@@ -10,7 +10,7 @@ func createFeatureSotreClient() (*FeatureStoreClient, error) {
 	accessId := os.Getenv("AccessId")
 	accessKey := os.Getenv("AccessKey")
 
-	return NewFeatureStoreClient("cn-hangzhou", accessId, accessKey, "fs_test_ots", WithDomain("paifeaturestore-pre.cn-hangzhou.aliyuncs.com"))
+	return NewFeatureStoreClient("cn-beijing", accessId, accessKey, "fs_test_ots", WithDomain("paifeaturestore.cn-beijing.aliyuncs.com"))
 }
 
 func TestGetFeatureViewOnlineFeatures(t *testing.T) {
