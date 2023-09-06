@@ -44,6 +44,12 @@ func (a *FeatureViewApiService) GetFeatureViewByID(featureViewId string) (GetFea
 		featureView.RegisterTable = *response.Body.RegisterTable
 		featureView.IsRegister = true
 	}
+	if response.Body.RegisterDatasourceId != nil && *response.Body.RegisterDatasourceId != "" {
+		if id, err := strconv.Atoi(*response.Body.RegisterDatasourceId); err == nil {
+			featureView.RegisterDatasourceId = id
+		}
+	}
+
 	if response.Body.LastSyncConfig != nil && *response.Body.LastSyncConfig != "" {
 		featureView.LasySyncConfig = *response.Body.LastSyncConfig
 	}

@@ -61,7 +61,7 @@ func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) *F
 		}
 		daoConfig.IGraphName = p.OnlineStore.GetDatasourceName()
 		daoConfig.GroupName = p.ProjectName
-		daoConfig.LabelName = featureView.Name
+		daoConfig.LabelName = p.OnlineStore.GetTableName(featureView)
 		fieldMap := make(map[string]string, len(view.Fields))
 		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
 		for _, field := range view.Fields {
