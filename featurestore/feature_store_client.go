@@ -198,6 +198,15 @@ func (c *FeatureStoreClient) LoadProjectData() {
 					continue
 				}
 				featureView := getFeatureViewResponse.FeatureView
+				if featureView.RegisterDatasourceId > 0 {
+					getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(featureView.RegisterDatasourceId)
+					if err != nil {
+						c.logError(fmt.Errorf("get datasource error, err=%v", err))
+						continue
+					}
+					featureView.RegisterDataSource = getDataSourceResponse.Datasource
+				}
+
 				featureViewDomain := domain.NewFeatureView(featureView, project, project.FeatureEntityMap[featureView.FeatureEntityName])
 				project.FeatureViewMap[featureView.Name] = featureViewDomain
 

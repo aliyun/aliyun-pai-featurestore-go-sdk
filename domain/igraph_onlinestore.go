@@ -1,13 +1,17 @@
 package domain
 
-import "github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+import (
+	"fmt"
+
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+)
 
 type IGraphOnlineStore struct {
 	*api.Datasource
 }
 
 func (s *IGraphOnlineStore) GetTableName(featureView *FeatureView) string {
-	return featureView.Name
+	return fmt.Sprintf("%s_fv%d", featureView.FeatureEntityName, featureView.FeatureViewId)
 }
 
 func (s *IGraphOnlineStore) GetDatasourceName() string {
