@@ -17,7 +17,7 @@ type Datasource struct {
 	Database      string `json:"database,omitempty"`
 	Token         string `json:"token,omitempty"`
 	Pwd           string `json:"pwd,omitempty"`
-	User          string `json:"mysql_user,omitempty"`
+	User          string `json:"user,omitempty"`
 	RdsInstanceId string `json:"rds_instance_id,omitempty"`
 
 	Ak Ak `json:"-"`
