@@ -26,19 +26,19 @@ client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName)
 
 ```go
 // get project by name
-	project, err := client.GetProject("fs_test_ots")
-	if err != nil {
-		// t.Fatal(err)
-	}
+project, err := client.GetProject("fs_test_ots")
+if err != nil {
+    // t.Fatal(err)
+}
 
-	// get featureview by name
-	user_feature_view := project.GetFeatureView("user_fea")
-	if user_feature_view == nil {
-		// t.Fatal("feature view not exist")
-	}
+// get featureview by name
+user_feature_view := project.GetFeatureView("user_fea")
+if user_feature_view == nil {
+    // t.Fatal("feature view not exist")
+}
 
-	// get online features
-	features, err := user_feature_view.GetOnlineFeatures([]interface{}{"100043186", "100060369"}, []string{"*"}, nil)
+// get online features
+features, err := user_feature_view.GetOnlineFeatures([]interface{}{"100043186", "100060369"}, []string{"*"}, nil)
 ```
 
 []string{"*"} 代表获取 featureview 下的所有特征， 也可以指定部分特征名称。
@@ -66,19 +66,19 @@ client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName)
 
 ```golang
 // get project by name
-	project, err := client.GetProject("fs_test_ots")
-	if err != nil {
-		// t.Fatal(err)
-	}
+project, err := client.GetProject("fs_test_ots")
+if err != nil {
+    // t.Fatal(err)
+}
 
-	// get ModelFeature by name
-	model_feature := project.GetModelFeature("rank")
-	if model_feature == nil {
-		// t.Fatal("model feature not exist")
-	}
+// get ModelFeature by name
+model_feature := project.GetModelFeature("rank")
+if model_feature == nil {
+    // t.Fatal("model feature not exist")
+}
 
- // get online features
- features, err := model_feature.GetOnlineFeatures(map[string][]interface{}{"user_id": {"100000676", "100004208"}, "item_id":{"238038872", "264025480"}} )
+// get online features
+features, err := model_feature.GetOnlineFeatures(map[string][]interface{}{"user_id": {"100000676", "100004208"}, "item_id":{"238038872", "264025480"}} )
 ```
 
 ModelFeature 可以关联多个 FeatureEntity,  可以设置多个 join_id, 然后特征统一返回。
@@ -115,8 +115,8 @@ ModelFeature 可以关联多个 FeatureEntity,  可以设置多个 join_id, 然�
 也可以指定某个 FeatureEntity, 把 FeatureEntity 对应的特征一块返回。
 
 ```go
- // user 是 FeatureEntity 名称
- features, err := model_feature.GetOnlineFeaturesWithEntity(map[string][]interface{}{"user_id": {"100000676", "100004208"}}, "user" )
+// user 是 FeatureEntity 名称
+features, err := model_feature.GetOnlineFeaturesWithEntity(map[string][]interface{}{"user_id": {"100000676", "100004208"}}, "user" )
 ```
 
 上面的含义是把  ModelFeature 下的 user(FeatureEntity) 对应的特征全部获取到。
