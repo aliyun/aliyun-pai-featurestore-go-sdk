@@ -2,6 +2,7 @@ package dao
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	aligraph "github.com/aliyun/aliyun-igraph-go-sdk"
@@ -48,7 +49,7 @@ func (d *FeatureViewIGraphDao) GetFeatures(keys []interface{}, selectFields []st
 	var pkeys []string
 	for _, key := range keys {
 		if pkey := utils.ToString(key, ""); pkey != "" {
-			pkeys = append(pkeys, pkey)
+			pkeys = append(pkeys, url.QueryEscape(pkey))
 		}
 	}
 	selector := make([]string, 0, len(selectFields))
