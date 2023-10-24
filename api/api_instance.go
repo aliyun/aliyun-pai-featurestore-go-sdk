@@ -31,11 +31,10 @@ func (a *InstanceApiService) GetInstance() error {
 	var instanceId string
 
 	for _, instance := range response.Body.Instances {
-		if *instance.RegionId == a.client.cfg.regionId {
-			instanceId = *instance.InstanceId
-			break
-		}
+		instanceId = *instance.InstanceId
+		break
 	}
+
 	if instanceId == "" {
 		return fmt.Errorf("region:%s, not found PAI-FeatureStore instance", a.client.cfg.regionId)
 	}
