@@ -4,11 +4,15 @@ import (
 	"database/sql"
 	"fmt"
 	"hash/crc32"
+	"log"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/huandu/go-sqlbuilder"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/hologres"
+	"github.com/huandu/go-sqlbuilder"
 )
 
 type FeatureViewHologresDao struct {
@@ -19,6 +23,9 @@ type FeatureViewHologresDao struct {
 	ttl             int
 	mu              sync.RWMutex
 	stmtMap         map[uint32]*sql.Stmt
+
+	offlineTable string
+	onlineTable  string
 }
 
 func NewFeatureViewHologresDao(config DaoConfig) *FeatureViewHologresDao {
@@ -28,6 +35,8 @@ func NewFeatureViewHologresDao(config DaoConfig) *FeatureViewHologresDao {
 		eventTimeField:  config.EventTimeField,
 		ttl:             config.TTL,
 		stmtMap:         make(map[uint32]*sql.Stmt, 4),
+		offlineTable:    config.HologresOfflineTableName,
+		onlineTable:     config.HologresOnlineTableName,
 	}
 	hologres, err := hologres.GetHologres(config.HologresName)
 	if err != nil {
@@ -106,4 +115,259 @@ func (d *FeatureViewHologresDao) GetFeatures(keys []interface{}, selectFields []
 	}
 
 	return result, nil
+}
+
+type sequenceInfo struct {
+	itemId    string
+	event     string
+	playTime  float64
+	timestamp int64
+}
+
+func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	var selectFields []string
+	if sequenceConfig.PlayTimeField == "" {
+		selectFields = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.TimestampField}
+	} else {
+		selectFields = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.PlayTimeField, sequenceConfig.TimestampField}
+	}
+	currTime := time.Now().Unix()
+	sequencePlayTimeMap := make(map[string]float64)
+	if sequenceConfig.PlayTimeFilter != "" {
+		playTimes := strings.Split(sequenceConfig.PlayTimeFilter, ";")
+		for _, eventTime := range playTimes {
+			strs := strings.Split(eventTime, ":")
+			if len(strs) == 2 {
+				if t, err := strconv.ParseFloat(strs[1], 64); err == nil {
+					sequencePlayTimeMap[strs[0]] = t
+				}
+			}
+		}
+	}
+
+	onlineFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
+		onlineSequences := []*sequenceInfo{}
+		builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
+		builder.Select(selectFields...)
+		builder.From(d.onlineTable)
+		where := []string{builder.Equal(userIdField, key), builder.GreaterThan(sequenceConfig.TimestampField, currTime-86400*5),
+			builder.Equal(sequenceConfig.EventField, seqEvent)}
+		builder.Where(where...)
+		builder.Limit(seqLen)
+		builder.OrderBy(sequenceConfig.TimestampField).Desc()
+
+		sql, args := builder.Build()
+		stmtKey := crc32.ChecksumIEEE([]byte(sql))
+		stmt := d.getStmt(stmtKey)
+		if stmt == nil {
+			d.mu.Lock()
+			stmt = d.stmtMap[stmtKey]
+			if stmt == nil {
+				stmt2, err := d.db.Prepare(sql)
+				if err != nil {
+					d.mu.Unlock()
+					log.Println(err)
+					return nil
+				}
+				d.stmtMap[stmtKey] = stmt2
+				stmt = stmt2
+				d.mu.Unlock()
+			} else {
+				d.mu.Unlock()
+			}
+		}
+		rows, err := stmt.Query(args...)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
+		defer rows.Close()
+		for rows.Next() {
+			seq := new(sequenceInfo)
+			var dst []interface{}
+			if sequenceConfig.PlayTimeField == "" {
+				dst = []interface{}{&seq.itemId, &seq.event, &seq.timestamp}
+			} else {
+				dst = []interface{}{&seq.itemId, &seq.event, &seq.timestamp, &seq.playTime}
+			}
+			if err := rows.Scan(dst...); err == nil {
+				if t, exist := sequencePlayTimeMap[seqEvent]; exist {
+					if seq.playTime <= t {
+						continue
+					}
+				}
+				onlineSequences = append(onlineSequences, seq)
+			} else {
+				log.Println(err)
+				return nil
+			}
+		}
+
+		return onlineSequences
+	}
+
+	offlineFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
+		offlineSequences := []*sequenceInfo{}
+		builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
+		builder.Select(selectFields...)
+		builder.From(d.offlineTable)
+		where := []string{builder.Equal(userIdField, key), builder.Equal(sequenceConfig.EventField, seqEvent)}
+		builder.Where(where...)
+		builder.Limit(seqLen)
+		builder.OrderBy(sequenceConfig.TimestampField).Desc()
+
+		sql, args := builder.Build()
+		stmtKey := crc32.ChecksumIEEE([]byte(sql))
+		stmt := d.getStmt(stmtKey)
+		if stmt == nil {
+			d.mu.Lock()
+			stmt = d.stmtMap[stmtKey]
+			if stmt == nil {
+				stmt2, err := d.db.Prepare(sql)
+				if err != nil {
+					d.mu.Unlock()
+					log.Println(err)
+					return nil
+				}
+				d.stmtMap[stmtKey] = stmt2
+				stmt = stmt2
+				d.mu.Unlock()
+			} else {
+				d.mu.Unlock()
+			}
+		}
+
+		rows, err := stmt.Query(args...)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
+		defer rows.Close()
+		for rows.Next() {
+			seq := new(sequenceInfo)
+			var dst []interface{}
+			if sequenceConfig.PlayTimeField == "" {
+				dst = []interface{}{&seq.itemId, &seq.event, &seq.timestamp}
+			} else {
+				dst = []interface{}{&seq.itemId, &seq.event, &seq.playTime, &seq.timestamp}
+			}
+			if err := rows.Scan(dst...); err == nil {
+				if t, exist := sequencePlayTimeMap[seqEvent]; exist {
+					if seq.playTime <= t {
+						continue
+					}
+				}
+				offlineSequences = append(offlineSequences, seq)
+			} else {
+				log.Println(err)
+				return nil
+			}
+		}
+
+		return offlineSequences
+
+	}
+
+	results := make([]map[string]interface{}, 0, len(keys))
+
+	var wg sync.WaitGroup
+	for _, key := range keys {
+		wg.Add(1)
+		go func(key interface{}) {
+			defer wg.Done()
+			properties := make(map[string]interface{})
+			var mu sync.Mutex
+
+			var eventWg sync.WaitGroup
+			for _, seqConfig := range sequenceConfig.SeqConfig {
+				eventWg.Add(1)
+				go func(seqConfig *api.SeqConfig) {
+					defer eventWg.Done()
+					var onlineSequences []*sequenceInfo
+					var offlineSequences []*sequenceInfo
+
+					var innerWg sync.WaitGroup
+					//get data from online table
+					innerWg.Add(1)
+					go func(seqEvent string, seqLen int, key interface{}) {
+						defer innerWg.Done()
+						if onlineresult := onlineFunc(seqEvent, seqLen, key); onlineresult != nil {
+							onlineSequences = onlineresult
+						}
+					}(seqConfig.SeqEvent, seqConfig.SeqLen, key)
+					//get data from offline table
+					innerWg.Add(1)
+					go func(seqEvent string, seqLen int, key interface{}) {
+						defer innerWg.Done()
+						if offlineresult := offlineFunc(seqEvent, seqLen, key); offlineresult != nil {
+							offlineSequences = offlineresult
+						}
+					}(seqConfig.SeqEvent, seqConfig.SeqLen, key)
+					innerWg.Wait()
+
+					subproperties := makeSequenceFeatures(offlineSequences, onlineSequences, seqConfig, sequenceConfig, currTime)
+					mu.Lock()
+					defer mu.Unlock()
+					for k, value := range subproperties {
+						properties[k] = value
+					}
+				}(seqConfig)
+			}
+			eventWg.Wait()
+			properties[userIdField] = key
+			results = append(results, properties)
+		}(key)
+	}
+
+	wg.Wait()
+
+	return results, nil
+
+}
+
+func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seqConfig *api.SeqConfig, sequenceConfig api.FeatureViewSeqConfig, currTime int64) map[string]interface{} {
+	//combine offlineSequences and onlineSequences
+	if len(offlineSequences) > 0 {
+		index := 0
+		for index < len(onlineSequences) {
+			if onlineSequences[index].timestamp < offlineSequences[0].timestamp {
+				break
+			}
+			index++
+		}
+
+		onlineSequences = onlineSequences[:index]
+		onlineSequences = append(onlineSequences, offlineSequences...)
+		if len(onlineSequences) > seqConfig.SeqLen {
+			onlineSequences = onlineSequences[:seqConfig.SeqLen]
+		}
+	}
+
+	//produce seqeunce feature correspond to easyrec processor
+	sequencesValueMap := make(map[string][]string)
+	sequenceMap := make(map[string]bool, 0)
+
+	for _, seq := range onlineSequences {
+		key := fmt.Sprintf("%s#%s", seq.itemId, seq.event)
+		if _, exist := sequenceMap[key]; !exist {
+			sequenceMap[key] = true
+			sequencesValueMap[sequenceConfig.ItemIdField] = append(sequencesValueMap[sequenceConfig.ItemIdField], seq.itemId)
+			sequencesValueMap[sequenceConfig.TimestampField] = append(sequencesValueMap[sequenceConfig.TimestampField], fmt.Sprintf("%d", seq.timestamp))
+			sequencesValueMap[sequenceConfig.EventField] = append(sequencesValueMap[sequenceConfig.EventField], seq.event)
+			if sequenceConfig.PlayTimeField != "" {
+				sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
+			}
+			sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
+		}
+	}
+
+	properties := make(map[string]interface{})
+	for key, value := range sequencesValueMap {
+		curSequenceSubName := (seqConfig.OnlineSeqName + "__" + key)
+		properties[curSequenceSubName] = strings.Join(value, ";")
+	}
+	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], ";")
+
+	return properties
+
 }

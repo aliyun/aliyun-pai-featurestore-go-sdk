@@ -1,11 +1,13 @@
 package dao
 
 import (
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 )
 
 type FeatureViewDao interface {
 	GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error)
+	GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
 }
 
 func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
@@ -18,7 +20,7 @@ func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 	} else if config.DatasourceType == constants.Datasource_Type_Redis {
 		return NewFeatureViewRedisDao(config)
 	} else if config.DatasourceType == constants.Datasource_Type_TableStore {
-		return NewFeatureViewOTSDao(config)
+		return NewFeatureViewTableStoreDao(config)
 	}
 
 	panic("not found FeatureViewDao implement")

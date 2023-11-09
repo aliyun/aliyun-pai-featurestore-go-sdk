@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/redisdb"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
+	"github.com/go-redis/redis/v8"
 )
 
 type FeatureViewRedisDao struct {
@@ -90,4 +91,8 @@ func (d *FeatureViewRedisDao) GetFeatures(keys []interface{}, selectFields []str
 	}
 
 	return result, nil
+}
+
+func (d *FeatureViewRedisDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{}, nil
 }

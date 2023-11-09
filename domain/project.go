@@ -5,13 +5,13 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/hologres"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/igraph"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/ots"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/tablestore"
 )
 
 type Project struct {
 	*api.Project
 	OnlineStore      OnlineStore
-	FeatureViewMap   map[string]*FeatureView
+	FeatureViewMap   map[string]FeatureView
 	FeatureEntityMap map[string]*FeatureEntity
 	ModelMap         map[string]*Model
 }
@@ -19,7 +19,7 @@ type Project struct {
 func NewProject(p *api.Project, isInitClient bool) *Project {
 	project := Project{
 		Project:          p,
-		FeatureViewMap:   make(map[string]*FeatureView),
+		FeatureViewMap:   make(map[string]FeatureView),
 		FeatureEntityMap: make(map[string]*FeatureEntity),
 		ModelMap:         make(map[string]*Model),
 	}
@@ -45,13 +45,13 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 		}
 		project.OnlineStore = onlineStore
 	case constants.Datasource_Type_TableStore:
-		onlineStore := &OTSOnlineStore{
+		onlineStore := &TableStoreOnlineStore{
 			Datasource: p.OnlineDataSource,
 		}
 
 		if isInitClient {
-			client := onlineStore.Datasource.NewOTSClient()
-			ots.RegisterOTSClient(onlineStore.Name, client)
+			client := onlineStore.Datasource.NewTableStoreClient()
+			tablestore.RegisterTableStoreClient(onlineStore.Name, client)
 		}
 		project.OnlineStore = onlineStore
 	default:
@@ -61,7 +61,7 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 	return &project
 }
 
-func (p *Project) GetFeatureView(name string) *FeatureView {
+func (p *Project) GetFeatureView(name string) FeatureView {
 	return p.FeatureViewMap[name]
 }
 

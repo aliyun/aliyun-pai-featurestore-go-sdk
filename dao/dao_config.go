@@ -1,6 +1,8 @@
 package dao
 
-import "github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+import (
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+)
 
 type DaoConfig struct {
 	DatasourceType      string
@@ -11,8 +13,6 @@ type DaoConfig struct {
 	MysqlName           string
 	MysqlTableName      string
 	Config              string
-	TableStoreName      string
-	TableStoreTableName string
 	HBasePrefix         string
 	HBaseName           string
 	HBaseTable          string
@@ -27,9 +27,9 @@ type DaoConfig struct {
 	HologresName      string
 	HologresTableName string
 
-	//ots
-	OtsName      string
-	OtsTableName string
+	//tablestore
+	TableStoreName      string
+	TableStoreTableName string
 
 	// clickhouse
 	ClickHouseName      string
@@ -49,9 +49,18 @@ type DaoConfig struct {
 	SaveOriginalField bool
 
 	FieldMap map[string]string
-	// redis, ots
+	// redis, tablestore
 	FieldTypeMap map[string]constants.FSType
 
 	// redis
 	Fields []string
+
+	// hologres sequence tables
+	HologresOnlineTableName  string
+	HologresOfflineTableName string
+	// tablestore sequence tables
+	TableStoreOnlineTableName  string
+	TableStoreOfflineTableName string
+	// igraph sequence table
+	IgraphEdgeName string
 }

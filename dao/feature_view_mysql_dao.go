@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/huandu/go-sqlbuilder"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/mysqldb"
+	"github.com/huandu/go-sqlbuilder"
 )
 
 type FeatureViewMysqlDao struct {
@@ -106,4 +107,8 @@ func (d *FeatureViewMysqlDao) GetFeatures(keys []interface{}, selectFields []str
 	}
 
 	return result, nil
+}
+
+func (d *FeatureViewMysqlDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{}, nil
 }
