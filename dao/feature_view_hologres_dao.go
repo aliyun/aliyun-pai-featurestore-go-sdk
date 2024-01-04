@@ -60,10 +60,10 @@ func (d *FeatureViewHologresDao) GetFeatures(keys []interface{}, selectFields []
 	builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
 	builder.Select(selector...)
 	builder.From(d.table)
-	builder.Where(builder.In(d.primaryKeyField, keys...))
+	builder.Where(builder.In(fmt.Sprintf("\"%s\"", d.primaryKeyField), keys...))
 	if d.ttl > 0 {
 		t := time.Now().Add(time.Duration(-1 * d.ttl * int(time.Second)))
-		builder.Where(builder.GreaterEqualThan(d.eventTimeField, t))
+		builder.Where(builder.GreaterEqualThan(fmt.Sprintf("\"%s\"", d.eventTimeField), t))
 	}
 
 	sql, args := builder.Build()
@@ -127,9 +127,11 @@ type sequenceInfo struct {
 func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
 	var selectFields []string
 	if sequenceConfig.PlayTimeField == "" {
-		selectFields = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.TimestampField}
+		selectFields = []string{fmt.Sprintf("\"%s\"", sequenceConfig.ItemIdField), fmt.Sprintf("\"%s\"", sequenceConfig.EventField),
+			fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField)}
 	} else {
-		selectFields = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.PlayTimeField, sequenceConfig.TimestampField}
+		selectFields = []string{fmt.Sprintf("\"%s\"", sequenceConfig.ItemIdField), fmt.Sprintf("\"%s\"", sequenceConfig.EventField),
+			fmt.Sprintf("\"%s\"", sequenceConfig.PlayTimeField), fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField)}
 	}
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := make(map[string]float64)
@@ -150,11 +152,12 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 		builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
 		builder.Select(selectFields...)
 		builder.From(d.onlineTable)
-		where := []string{builder.Equal(userIdField, key), builder.GreaterThan(sequenceConfig.TimestampField, currTime-86400*5),
-			builder.Equal(sequenceConfig.EventField, seqEvent)}
+		where := []string{builder.Equal(fmt.Sprintf("\"%s\"", userIdField), key),
+			builder.GreaterThan(fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField), currTime-86400*5),
+			builder.Equal(fmt.Sprintf("\"%s\"", sequenceConfig.EventField), seqEvent)}
 		builder.Where(where...)
 		builder.Limit(seqLen)
-		builder.OrderBy(sequenceConfig.TimestampField).Desc()
+		builder.OrderBy(fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField)).Desc()
 
 		sql, args := builder.Build()
 		stmtKey := crc32.ChecksumIEEE([]byte(sql))
@@ -211,10 +214,11 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 		builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
 		builder.Select(selectFields...)
 		builder.From(d.offlineTable)
-		where := []string{builder.Equal(userIdField, key), builder.Equal(sequenceConfig.EventField, seqEvent)}
+		where := []string{builder.Equal(fmt.Sprintf("\"%s\"", userIdField), key),
+			builder.Equal(fmt.Sprintf("\"%s\"", sequenceConfig.EventField), seqEvent)}
 		builder.Where(where...)
 		builder.Limit(seqLen)
-		builder.OrderBy(sequenceConfig.TimestampField).Desc()
+		builder.OrderBy(fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField)).Desc()
 
 		sql, args := builder.Build()
 		stmtKey := crc32.ChecksumIEEE([]byte(sql))
