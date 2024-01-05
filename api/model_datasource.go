@@ -31,7 +31,7 @@ func (d *Datasource) GenerateDSN(datasourceType string) (DSN string) {
 	return
 }
 
-func (d *Datasource) NewOTSClient() (client *tablestore.TableStoreClient) {
+func (d *Datasource) NewTableStoreClient() (client *tablestore.TableStoreClient) {
 	client = tablestore.NewClient(d.VpcAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret)
 	return
 }

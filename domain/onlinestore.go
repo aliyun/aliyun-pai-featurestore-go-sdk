@@ -1,6 +1,8 @@
 package domain
 
 type OnlineStore interface {
-	GetTableName(featureView *FeatureView) string
+	GetTableName(featureView *BaseFeatureView) string
 	GetDatasourceName() string
+	GetSeqOfflineTableName(seqFeatureView *SequenceFeatureView) string
+	GetSeqOnlineTableName(seqFeatureView *SequenceFeatureView) string
 }

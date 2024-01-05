@@ -20,3 +20,8 @@ const (
 	Datasource_Type_Spark      = "spark"
 	Datasource_Type_TableStore = "tablestore"
 )
+const (
+	Feature_View_Type_Batch    = "Batch"
+	Feature_View_Type_Stream   = "Stream"
+	Feature_View_Type_Sequence = "Sequence"
+)

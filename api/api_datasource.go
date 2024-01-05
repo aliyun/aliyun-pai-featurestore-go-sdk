@@ -53,7 +53,6 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int) (GetD
 	case "Tablestore":
 		datasource.Type = constants.Datasource_Type_TableStore
 		datasource.VpcAddress = fmt.Sprintf("https://%s.%s.vpc.tablestore.aliyuncs.com", *response.Body.Uri, a.client.cfg.regionId)
-		//datasource.VpcAddress = fmt.Sprintf("https://%s.%s.ots.aliyuncs.com", *response.Body.Uri, a.client.cfg.regionId)
 		datasource.RdsInstanceId = *response.Body.Uri
 	case "MaxCompute":
 		datasource.Type = constants.Datasource_Type_MaxCompute
