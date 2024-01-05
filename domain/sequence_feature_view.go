@@ -96,18 +96,18 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 
 func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
 	sequenceConfig := f.sequenceConfig
-	newOnlineConfig := []*api.SeqConfig{}
+	onlineConfig := []*api.SeqConfig{}
 
 	for _, feature := range features {
 		if feature == "*" {
-			newOnlineConfig = sequenceConfig.SeqConfig
+			onlineConfig = sequenceConfig.SeqConfig
 			break
 		} else {
 			found := false
 			for _, seqConfig := range sequenceConfig.SeqConfig {
 				if seqConfig.OnlineSeqName == feature {
 					found = true
-					newOnlineConfig = append(newOnlineConfig, seqConfig)
+					onlineConfig = append(onlineConfig, seqConfig)
 					break
 				}
 			}
@@ -117,9 +117,7 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 		}
 	}
 
-	sequenceConfig.SeqConfig = newOnlineConfig
-
-	sequenceFeatureResults, err := f.featureViewDao.GetUserSequenceFeature(joinIds, f.userIdField, sequenceConfig)
+	sequenceFeatureResults, err := f.featureViewDao.GetUserSequenceFeature(joinIds, f.userIdField, sequenceConfig, onlineConfig)
 
 	if f.userIdField != f.FeatureEntity.FeatureEntityJoinid {
 		for _, sequencefeatureMap := range sequenceFeatureResults {

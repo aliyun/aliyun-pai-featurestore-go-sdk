@@ -93,6 +93,6 @@ func (d *FeatureViewRedisDao) GetFeatures(keys []interface{}, selectFields []str
 	return result, nil
 }
 
-func (d *FeatureViewRedisDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewRedisDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
 	return []map[string]interface{}{}, nil
 }

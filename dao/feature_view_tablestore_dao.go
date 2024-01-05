@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -100,20 +99,9 @@ func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields 
 	return result, nil
 }
 
-func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
 	currTime := time.Now().Unix()
-	sequencePlayTimeMap := make(map[string]float64)
-	if sequenceConfig.PlayTimeFilter != "" {
-		playTimes := strings.Split(sequenceConfig.PlayTimeFilter, ";")
-		for _, eventTime := range playTimes {
-			strs := strings.Split(eventTime, ":")
-			if len(strs) == 2 {
-				if t, err := strconv.ParseFloat(strs[1], 64); err == nil {
-					sequencePlayTimeMap[strs[0]] = t
-				}
-			}
-		}
-	}
+	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig)
 
 	pkField := fmt.Sprintf("%s_%s", userIdField, sequenceConfig.EventField)
 	var skField string
@@ -218,7 +206,7 @@ func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, us
 			var mu sync.Mutex
 
 			var eventWg sync.WaitGroup
-			for _, seqConfig := range sequenceConfig.SeqConfig {
+			for _, seqConfig := range onlineConfig {
 				eventWg.Add(1)
 				go func(seqConfig *api.SeqConfig) {
 					defer eventWg.Done()

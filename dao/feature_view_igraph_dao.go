@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -107,7 +106,7 @@ func (d *FeatureViewIGraphDao) GetFeatures(keys []interface{}, selectFields []st
 	return result, nil
 }
 
-func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
 	var selectFields []string
 	if sequenceConfig.PlayTimeField == "" {
 		selectFields = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.TimestampField}
@@ -116,18 +115,7 @@ func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userId
 	}
 
 	currTime := time.Now().Unix()
-	sequencePlayTimeMap := make(map[string]float64)
-	if sequenceConfig.PlayTimeFilter != "" {
-		playTimes := strings.Split(sequenceConfig.PlayTimeFilter, ";")
-		for _, eventTime := range playTimes {
-			strs := strings.Split(eventTime, ":")
-			if len(strs) == 2 {
-				if t, err := strconv.ParseFloat(strs[1], 64); err == nil {
-					sequencePlayTimeMap[strs[0]] = t
-				}
-			}
-		}
-	}
+	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig)
 
 	fetchDataFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
 		sequences := []*sequenceInfo{}
@@ -190,7 +178,7 @@ func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userId
 			var mu sync.Mutex
 
 			var eventWg sync.WaitGroup
-			for _, seqConfig := range sequenceConfig.SeqConfig {
+			for _, seqConfig := range onlineConfig {
 				eventWg.Add(1)
 				go func(seqConfig *api.SeqConfig) {
 					defer eventWg.Done()

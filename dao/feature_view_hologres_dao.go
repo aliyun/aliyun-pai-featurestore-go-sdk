@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -124,7 +122,7 @@ type sequenceInfo struct {
 	timestamp int64
 }
 
-func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
 	var selectFields []string
 	if sequenceConfig.PlayTimeField == "" {
 		selectFields = []string{fmt.Sprintf("\"%s\"", sequenceConfig.ItemIdField), fmt.Sprintf("\"%s\"", sequenceConfig.EventField),
@@ -134,18 +132,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 			fmt.Sprintf("\"%s\"", sequenceConfig.PlayTimeField), fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField)}
 	}
 	currTime := time.Now().Unix()
-	sequencePlayTimeMap := make(map[string]float64)
-	if sequenceConfig.PlayTimeFilter != "" {
-		playTimes := strings.Split(sequenceConfig.PlayTimeFilter, ";")
-		for _, eventTime := range playTimes {
-			strs := strings.Split(eventTime, ":")
-			if len(strs) == 2 {
-				if t, err := strconv.ParseFloat(strs[1], 64); err == nil {
-					sequencePlayTimeMap[strs[0]] = t
-				}
-			}
-		}
-	}
+	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig)
 
 	onlineFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
 		onlineSequences := []*sequenceInfo{}
@@ -283,7 +270,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 			var mu sync.Mutex
 
 			var eventWg sync.WaitGroup
-			for _, seqConfig := range sequenceConfig.SeqConfig {
+			for _, seqConfig := range onlineConfig {
 				eventWg.Add(1)
 				go func(seqConfig *api.SeqConfig) {
 					defer eventWg.Done()
@@ -326,52 +313,5 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 	wg.Wait()
 
 	return results, nil
-
-}
-
-func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seqConfig *api.SeqConfig, sequenceConfig api.FeatureViewSeqConfig, currTime int64) map[string]interface{} {
-	//combine offlineSequences and onlineSequences
-	if len(offlineSequences) > 0 {
-		index := 0
-		for index < len(onlineSequences) {
-			if onlineSequences[index].timestamp < offlineSequences[0].timestamp {
-				break
-			}
-			index++
-		}
-
-		onlineSequences = onlineSequences[:index]
-		onlineSequences = append(onlineSequences, offlineSequences...)
-		if len(onlineSequences) > seqConfig.SeqLen {
-			onlineSequences = onlineSequences[:seqConfig.SeqLen]
-		}
-	}
-
-	//produce seqeunce feature correspond to easyrec processor
-	sequencesValueMap := make(map[string][]string)
-	sequenceMap := make(map[string]bool, 0)
-
-	for _, seq := range onlineSequences {
-		key := fmt.Sprintf("%s#%s", seq.itemId, seq.event)
-		if _, exist := sequenceMap[key]; !exist {
-			sequenceMap[key] = true
-			sequencesValueMap[sequenceConfig.ItemIdField] = append(sequencesValueMap[sequenceConfig.ItemIdField], seq.itemId)
-			sequencesValueMap[sequenceConfig.TimestampField] = append(sequencesValueMap[sequenceConfig.TimestampField], fmt.Sprintf("%d", seq.timestamp))
-			sequencesValueMap[sequenceConfig.EventField] = append(sequencesValueMap[sequenceConfig.EventField], seq.event)
-			if sequenceConfig.PlayTimeField != "" {
-				sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
-			}
-			sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
-		}
-	}
-
-	properties := make(map[string]interface{})
-	for key, value := range sequencesValueMap {
-		curSequenceSubName := (seqConfig.OnlineSeqName + "__" + key)
-		properties[curSequenceSubName] = strings.Join(value, ";")
-	}
-	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], ";")
-
-	return properties
 
 }
