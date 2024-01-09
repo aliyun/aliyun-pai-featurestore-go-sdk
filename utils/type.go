@@ -98,6 +98,8 @@ func ToString(i interface{}, defaultVal string) string {
 		return strconv.Itoa(value)
 	case float64:
 		return strconv.FormatFloat(value, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(value), 'f', -1, 64)
 	case int32:
 		return strconv.Itoa(int(value))
 	case int64:

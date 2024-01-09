@@ -11,11 +11,11 @@ import (
 type Model struct {
 	*api.Model
 	project                 *Project
-	featureViewMap          map[string]*FeatureView
+	featureViewMap          map[string]FeatureView
 	featureEntityMap        map[string]*FeatureEntity
-	featureNamesMap         map[string][]string                // featureview : feature names
-	aliasNamesMap           map[string]map[string]string       // featureview : alias names
-	featureEntityJoinIdMap  map[string]map[string]*FeatureView // feature entity joinid : featureviews
+	featureNamesMap         map[string][]string               // featureview : feature names
+	aliasNamesMap           map[string]map[string]string      // featureview : alias names
+	featureEntityJoinIdMap  map[string]map[string]FeatureView // feature entity joinid : featureviews
 	featureEntityJoinIdList []string
 }
 
@@ -23,19 +23,20 @@ func NewModel(model *api.Model, p *Project) *Model {
 	m := &Model{
 		Model:                  model,
 		project:                p,
-		featureViewMap:         make(map[string]*FeatureView),
+		featureViewMap:         make(map[string]FeatureView),
 		featureEntityMap:       make(map[string]*FeatureEntity),
 		featureNamesMap:        make(map[string][]string),
 		aliasNamesMap:          make(map[string]map[string]string),
-		featureEntityJoinIdMap: make(map[string]map[string]*FeatureView),
+		featureEntityJoinIdMap: make(map[string]map[string]FeatureView),
 	}
 
 	for _, feature := range m.Features {
 		featureView := m.project.GetFeatureView(feature.FeatureViewName)
-		featureEntity := m.project.GetFeatureEntity(featureView.FeatureEntityName)
+
+		featureEntity := m.project.GetFeatureEntity(featureView.GetFeatureEntityName())
 		m.featureViewMap[feature.FeatureViewName] = featureView
-		m.featureEntityMap[featureView.FeatureEntityName] = featureEntity
-		m.featureNamesMap[feature.FeatureViewName] = append(m.featureNamesMap[feature.FeatureViewName], feature.Name)
+		m.featureEntityMap[featureView.GetFeatureEntityName()] = featureEntity
+		m.featureNamesMap[feature.FeatureViewName] = append(m.featureNamesMap[feature.FeatureViewName], featureView.Offline2Online(feature.Name))
 
 		if feature.AliasName != "" {
 			aliasMap, ok := m.aliasNamesMap[feature.FeatureViewName]
@@ -47,7 +48,7 @@ func NewModel(model *api.Model, p *Project) *Model {
 		}
 		featureViewMap, ok := m.featureEntityJoinIdMap[featureEntity.FeatureEntityJoinid]
 		if !ok {
-			featureViewMap = make(map[string]*FeatureView)
+			featureViewMap = make(map[string]FeatureView)
 		}
 		featureViewMap[feature.FeatureViewName] = featureView
 		m.featureEntityJoinIdMap[featureEntity.FeatureEntityJoinid] = featureViewMap
@@ -86,9 +87,9 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 
 		for _, featureView := range featureViewMap {
 			wg.Add(1)
-			go func(featureView *FeatureView, joinId string, keys []interface{}) {
+			go func(featureView FeatureView, joinId string, keys []interface{}) {
 				defer wg.Done()
-				features, err := featureView.GetOnlineFeatures(keys, m.featureNamesMap[featureView.Name], m.aliasNamesMap[featureView.Name])
+				features, err := featureView.GetOnlineFeatures(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
 				if err != nil {
 					fmt.Println(err)
 				}
@@ -142,9 +143,9 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 
 	for _, featureView := range featureViewMap {
 		wg.Add(1)
-		go func(featureView *FeatureView, joinId string, keys []interface{}) {
+		go func(featureView FeatureView, joinId string, keys []interface{}) {
 			defer wg.Done()
-			features, err := featureView.GetOnlineFeatures(keys, m.featureNamesMap[featureView.Name], m.aliasNamesMap[featureView.Name])
+			features, err := featureView.GetOnlineFeatures(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
 			if err != nil {
 				fmt.Println(err)
 			}
