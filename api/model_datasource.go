@@ -13,6 +13,7 @@ type Datasource struct {
 	Name          string `json:"name"`
 	Region        string `json:"region,omitempty"`
 	VpcAddress    string `json:"vpc_address,omitempty"`
+	PublicAddress string `json:"public_address,omitempty"`
 	Project       string `json:"project,omitempty"`
 	Database      string `json:"database,omitempty"`
 	Token         string `json:"token,omitempty"`
@@ -21,17 +22,28 @@ type Datasource struct {
 	RdsInstanceId string `json:"rds_instance_id,omitempty"`
 
 	Ak Ak `json:"-"`
+
+	TestMode bool `json:"-"`
 }
 
 func (d *Datasource) GenerateDSN(datasourceType string) (DSN string) {
 	if datasourceType == constants.Datasource_Type_Hologres {
-		DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
-			d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.VpcAddress, d.Database)
+		if d.TestMode {
+			DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
+				d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.PublicAddress, d.Database)
+		} else {
+			DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
+				d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.VpcAddress, d.Database)
+		}
 	}
 	return
 }
 
 func (d *Datasource) NewTableStoreClient() (client *tablestore.TableStoreClient) {
-	client = tablestore.NewClient(d.VpcAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret)
+	if d.TestMode {
+		client = tablestore.NewClient(d.PublicAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret)
+	} else {
+		client = tablestore.NewClient(d.VpcAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret)
+	}
 	return
 }

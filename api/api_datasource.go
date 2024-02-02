@@ -40,6 +40,7 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int) (GetD
 		uris := strings.Split(*response.Body.Uri, "/")
 		datasource.Database = uris[1]
 		datasource.VpcAddress = fmt.Sprintf("%s-%s-vpc-st.hologres.aliyuncs.com:80", uris[0], a.client.cfg.regionId)
+		datasource.PublicAddress = fmt.Sprintf("%s-%s.hologres.aliyuncs.com:80", uris[0], a.client.cfg.regionId)
 		//datasource.VpcAddress = fmt.Sprintf("%s-%s.hologres.aliyuncs.com:80", uris[0], a.client.cfg.regionId)
 	case "GraphCompute":
 		datasource.Type = constants.Datasource_Type_IGraph
@@ -48,11 +49,13 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int) (GetD
 			datasource.VpcAddress = config["address"]
 			datasource.User = config["username"]
 			datasource.Pwd = config["password"]
+			datasource.PublicAddress = strings.ReplaceAll(config["address"], ".igraph.aliyuncs.com", ".public.igraph.aliyuncs.com")
 		}
 		datasource.RdsInstanceId = *response.Body.Uri
 	case "Tablestore":
 		datasource.Type = constants.Datasource_Type_TableStore
 		datasource.VpcAddress = fmt.Sprintf("https://%s.%s.vpc.tablestore.aliyuncs.com", *response.Body.Uri, a.client.cfg.regionId)
+		datasource.PublicAddress = fmt.Sprintf("https://%s.%s.ots.aliyuncs.com", *response.Body.Uri, a.client.cfg.regionId)
 		datasource.RdsInstanceId = *response.Body.Uri
 	case "MaxCompute":
 		datasource.Type = constants.Datasource_Type_MaxCompute

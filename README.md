@@ -22,6 +22,14 @@ client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName)
 
 由于 SDK 是直连 onlinestore 的， client 需要在 VPC 环境运行。 比如 hologres/graphcompute , 需要在指定的 VPC 才能连接。
 
+如果需要在本地非 VPC 环境下进行测试，初始化 client 需要加上 WithTestMode()，此时连接 FeatureStore 和 onlinestore 均会使用公网地址。
+
+```go
+client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName, WithTestMode())
+```
+
+ **注意：** 当使用 WithTestMode() 初始化 client 时，需要确认在线数据源是否已开启公网。通过公网访问onlinestore会有对应数据源的流量开销，可能会产生下行流量费用。因此建议在此模式下只进行测试，生产环境请勿添加 WithTestMode()。
+
 - 获取 (离线/实时) FeatureView 的特征数据
 
 ```go
