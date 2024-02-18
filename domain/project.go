@@ -40,8 +40,13 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 		}
 
 		if isInitClient {
-			client := igraph.NewGraphClient(p.OnlineDataSource.VpcAddress, p.OnlineDataSource.User, p.OnlineDataSource.Pwd)
-			igraph.RegisterGraphClient(onlineStore.Name, client)
+			if p.OnlineDataSource.TestMode {
+				client := igraph.NewGraphClient(p.OnlineDataSource.PublicAddress, p.OnlineDataSource.User, p.OnlineDataSource.Pwd)
+				igraph.RegisterGraphClient(onlineStore.Name, client)
+			} else {
+				client := igraph.NewGraphClient(p.OnlineDataSource.VpcAddress, p.OnlineDataSource.User, p.OnlineDataSource.Pwd)
+				igraph.RegisterGraphClient(onlineStore.Name, client)
+			}
 		}
 		project.OnlineStore = onlineStore
 	case constants.Datasource_Type_TableStore:

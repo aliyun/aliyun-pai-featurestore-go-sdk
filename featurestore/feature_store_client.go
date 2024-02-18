@@ -43,6 +43,12 @@ func WithNoDatasourceInitClient() ClientOption {
 
 }
 
+func WithTestMode() ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.testMode = true
+	}
+}
+
 type FeatureStoreClient struct {
 	// loopLoadData flag to invoke loopLoadProjectData  function
 	loopLoadData bool
@@ -61,6 +67,9 @@ type FeatureStoreClient struct {
 
 	// ErrorLogger is the logger to report errors
 	ErrorLogger Logger
+
+	// testMode to get features by public address
+	testMode bool
 }
 
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
@@ -77,6 +86,9 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 	cfg := api.NewConfiguration(regionId, accessKeyId, accessKeySecret, projectName)
 	if client.domain != "" {
 		cfg.SetDomain(client.domain)
+	}
+	if client.testMode {
+		cfg.SetDomain(fmt.Sprintf("paifeaturestore.%s.aliyuncs.com", regionId))
 	}
 
 	apiClient, err := api.NewAPIClient(cfg)
@@ -153,6 +165,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 
 		p.OnlineDataSource = getDataSourceResponse.Datasource
 		p.OnlineDataSource.Ak = ak
+		p.OnlineDataSource.TestMode = c.testMode
 
 		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId)
 		if err != nil {
@@ -162,6 +175,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 
 		p.OfflineDataSource = getDataSourceResponse.Datasource
 		p.OfflineDataSource.Ak = ak
+		p.OfflineDataSource.TestMode = c.testMode
 
 		project := domain.NewProject(p, c.datasourceInitClient)
 		projectData[project.ProjectName] = project
