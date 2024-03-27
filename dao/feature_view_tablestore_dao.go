@@ -3,6 +3,7 @@ package dao
 import (
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"sync"
@@ -49,52 +50,72 @@ func NewFeatureViewTableStoreDao(config DaoConfig) *FeatureViewTableStoreDao {
 
 func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0, len(keys))
-	batchGetReq := &tablestore.BatchGetRowRequest{}
-	mqCriteria := &tablestore.MultiRowQueryCriteria{}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 
-	for _, key := range keys {
-		pkToGet := new(tablestore.PrimaryKey)
-		if d.fieldTypeMap[d.primaryKeyField] == constants.FS_INT64 || d.fieldTypeMap[d.primaryKeyField] == constants.FS_INT32 {
-			if v, ok := key.(int64); ok {
-				pkToGet.AddPrimaryKeyColumn(d.primaryKeyField, v)
-			} else {
-				s, _ := key.(string)
-				i, _ := strconv.ParseInt(s, 10, 64)
-				pkToGet.AddPrimaryKeyColumn(d.primaryKeyField, i)
-			}
-		} else if d.fieldTypeMap[d.primaryKeyField] == constants.FS_STRING {
-			pkToGet.AddPrimaryKeyColumn(d.primaryKeyField, key)
-		} else {
-			return result, errors.New("primary key type is not supported by TableStore")
+	for i := 0; i < len(keys); i += 100 {
+		end := i + 100
+		if end > len(keys) {
+			end = len(keys)
 		}
-		mqCriteria.AddRow(pkToGet)
-		mqCriteria.MaxVersion = 1
-		mqCriteria.ColumnsToGet = selectFields
-	}
+		ks := keys[i:end]
+		wg.Add(1)
+		go func(ks []interface{}) {
+			defer wg.Done()
+			batchGetReq := &tablestore.BatchGetRowRequest{}
+			mqCriteria := &tablestore.MultiRowQueryCriteria{}
 
-	mqCriteria.TableName = d.table
-	batchGetReq.MultiRowQueryCriteria = append(batchGetReq.MultiRowQueryCriteria, mqCriteria)
-	batchGetResponse, err := d.tablestoreClient.BatchGetRow(batchGetReq)
+			for _, key := range ks {
+				pkToGet := new(tablestore.PrimaryKey)
+				if d.fieldTypeMap[d.primaryKeyField] == constants.FS_INT64 || d.fieldTypeMap[d.primaryKeyField] == constants.FS_INT32 {
+					if v, ok := key.(int64); ok {
+						pkToGet.AddPrimaryKeyColumn(d.primaryKeyField, v)
+					} else {
+						s, _ := key.(string)
+						i, _ := strconv.ParseInt(s, 10, 64)
+						pkToGet.AddPrimaryKeyColumn(d.primaryKeyField, i)
+					}
+				} else if d.fieldTypeMap[d.primaryKeyField] == constants.FS_STRING {
+					pkToGet.AddPrimaryKeyColumn(d.primaryKeyField, key)
+				} else {
+					log.Println(errors.New("primary key type is not supported by TableStore"))
+					return
+				}
+				mqCriteria.AddRow(pkToGet)
+				mqCriteria.MaxVersion = 1
+				mqCriteria.ColumnsToGet = selectFields
+			}
 
-	if err != nil {
-		return result, err
-	}
+			mqCriteria.TableName = d.table
+			batchGetReq.MultiRowQueryCriteria = append(batchGetReq.MultiRowQueryCriteria, mqCriteria)
+			batchGetResponse, err := d.tablestoreClient.BatchGetRow(batchGetReq)
 
-	for _, rowResults := range batchGetResponse.TableToRowsResult {
-		for _, rowResult := range rowResults {
-			if rowResult.Error.Message != "" {
-				return result, errors.New(rowResult.Error.Message)
+			if err != nil {
+				log.Println(err)
+				return
 			}
-			newMap := make(map[string]interface{})
-			for _, pkValue := range rowResult.PrimaryKey.PrimaryKeys {
-				newMap[pkValue.ColumnName] = pkValue.Value
+
+			for _, rowResults := range batchGetResponse.TableToRowsResult {
+				for _, rowResult := range rowResults {
+					if rowResult.Error.Message != "" {
+						log.Println(errors.New(rowResult.Error.Message))
+						return
+					}
+					newMap := make(map[string]interface{})
+					for _, pkValue := range rowResult.PrimaryKey.PrimaryKeys {
+						newMap[pkValue.ColumnName] = pkValue.Value
+					}
+					for _, rowValue := range rowResult.Columns {
+						newMap[rowValue.ColumnName] = rowValue.Value
+					}
+					mu.Lock()
+					result = append(result, newMap)
+					mu.Unlock()
+				}
 			}
-			for _, rowValue := range rowResult.Columns {
-				newMap[rowValue.ColumnName] = rowValue.Value
-			}
-			result = append(result, newMap)
-		}
+		}(ks)
 	}
+	wg.Wait()
 
 	return result, nil
 }
