@@ -19,4 +19,5 @@ type FeatureView struct {
 	LasySyncConfig       string               `json:"last_sync_config"`
 	Fields               []*FeatureViewFields `json:"fields"`
 	RegisterDataSource   *Datasource          `json:"register_datasource,omitempty"`
+	WriteToFeatureDB     bool                 `json:"write_to_featuredb"`
 }

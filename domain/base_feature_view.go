@@ -44,64 +44,91 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 		TTL:               int(featureView.Ttl),
 		SaveOriginalField: false,
 	}
-	switch p.OnlineDatasourceType {
-	case constants.Datasource_Type_Hologres:
-		daoConfig.HologresTableName = p.OnlineStore.GetTableName(featureView)
-		daoConfig.HologresName = p.OnlineStore.GetDatasourceName()
-	case constants.Datasource_Type_IGraph:
-		if view.Config != "" {
-			configM := make(map[string]interface{})
-			if err := json.Unmarshal([]byte(view.Config), &configM); err == nil {
-				if save_original_field, exist := configM["save_original_field"]; exist {
-					if val, ok := save_original_field.(bool); ok {
-						daoConfig.SaveOriginalField = val
+
+	if view.WriteToFeatureDB || p.OnlineDatasourceType == constants.Datasource_Type_FeatureDB {
+		daoConfig.DatasourceType = constants.Datasource_Type_FeatureDB
+		daoConfig.FeatureDBDatabaseName = p.InstanceId
+		daoConfig.FeatureDBSchemaName = p.ProjectName
+		daoConfig.FeatureDBTableName = featureView.Name
+		daoConfig.FeatureDBSignature = p.Signature
+
+		fieldIndexMap := make(map[string]int, len(view.Fields)-1)
+		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields)-1)
+		position := 0
+		for _, field := range view.Fields {
+			if field.IsPartition {
+				continue
+			} else if field.IsPrimaryKey {
+				fieldTypeMap[field.Name] = constants.FSType(field.Type)
+			} else {
+				fieldIndexMap[field.Name] = position
+				fieldTypeMap[field.Name] = constants.FSType(field.Type)
+				position++
+			}
+		}
+		daoConfig.FieldIndexMap = fieldIndexMap
+		daoConfig.FieldTypeMap = fieldTypeMap
+	} else {
+		switch p.OnlineDatasourceType {
+		case constants.Datasource_Type_Hologres:
+			daoConfig.HologresTableName = p.OnlineStore.GetTableName(featureView)
+			daoConfig.HologresName = p.OnlineStore.GetDatasourceName()
+		case constants.Datasource_Type_IGraph:
+			if view.Config != "" {
+				configM := make(map[string]interface{})
+				if err := json.Unmarshal([]byte(view.Config), &configM); err == nil {
+					if save_original_field, exist := configM["save_original_field"]; exist {
+						if val, ok := save_original_field.(bool); ok {
+							daoConfig.SaveOriginalField = val
+						}
 					}
 				}
 			}
-		}
-		daoConfig.IGraphName = p.OnlineStore.GetDatasourceName()
-		daoConfig.GroupName = p.ProjectName
-		daoConfig.LabelName = p.OnlineStore.GetTableName(featureView)
-		fieldMap := make(map[string]string, len(view.Fields))
-		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
-		for _, field := range view.Fields {
-			if field.IsPrimaryKey {
-				fieldMap[field.Name] = field.Name
-				fieldTypeMap[field.Name] = constants.FSType(field.Type)
-			} else if field.IsPartition {
-				continue
-			} else {
-				var name string
-				if daoConfig.SaveOriginalField {
-					name = field.Name
+			daoConfig.IGraphName = p.OnlineStore.GetDatasourceName()
+			daoConfig.GroupName = p.ProjectName
+			daoConfig.LabelName = p.OnlineStore.GetTableName(featureView)
+			fieldMap := make(map[string]string, len(view.Fields))
+			fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
+			for _, field := range view.Fields {
+				if field.IsPrimaryKey {
+					fieldMap[field.Name] = field.Name
+					fieldTypeMap[field.Name] = constants.FSType(field.Type)
+				} else if field.IsPartition {
+					continue
 				} else {
-					name = fmt.Sprintf("f%d", field.Position)
+					var name string
+					if daoConfig.SaveOriginalField {
+						name = field.Name
+					} else {
+						name = fmt.Sprintf("f%d", field.Position)
+					}
+
+					fieldMap[name] = field.Name
+					fieldTypeMap[name] = constants.FSType(field.Type)
 				}
-
-				fieldMap[name] = field.Name
-				fieldTypeMap[name] = constants.FSType(field.Type)
 			}
-		}
-		daoConfig.FieldMap = fieldMap
-		daoConfig.FieldTypeMap = fieldTypeMap
-	case constants.Datasource_Type_TableStore:
-		daoConfig.TableStoreTableName = p.OnlineStore.GetTableName(featureView)
-		daoConfig.TableStoreName = p.OnlineStore.GetDatasourceName()
-		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
-		for _, field := range view.Fields {
-			if field.IsPrimaryKey {
-				fieldTypeMap[field.Name] = constants.FSType(field.Type)
-			} else if field.IsPartition {
-				continue
-			} else {
-				fieldTypeMap[field.Name] = constants.FSType(field.Type)
+			daoConfig.FieldMap = fieldMap
+			daoConfig.FieldTypeMap = fieldTypeMap
+		case constants.Datasource_Type_TableStore:
+			daoConfig.TableStoreTableName = p.OnlineStore.GetTableName(featureView)
+			daoConfig.TableStoreName = p.OnlineStore.GetDatasourceName()
+			fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
+			for _, field := range view.Fields {
+				if field.IsPrimaryKey {
+					fieldTypeMap[field.Name] = constants.FSType(field.Type)
+				} else if field.IsPartition {
+					continue
+				} else {
+					fieldTypeMap[field.Name] = constants.FSType(field.Type)
+				}
 			}
+			daoConfig.FieldTypeMap = fieldTypeMap
+
+		default:
+
 		}
-		daoConfig.FieldTypeMap = fieldTypeMap
-
-	default:
-
 	}
+
 	featureViewDao := dao.NewFeatureViewDao(daoConfig)
 	featureView.featureViewDao = featureViewDao
 

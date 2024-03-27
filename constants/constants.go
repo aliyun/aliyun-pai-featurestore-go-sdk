@@ -19,6 +19,7 @@ const (
 	Datasource_Type_IGraph     = "igraph"
 	Datasource_Type_Spark      = "spark"
 	Datasource_Type_TableStore = "tablestore"
+	Datasource_Type_FeatureDB  = "featuredb"
 )
 const (
 	Feature_View_Type_Batch    = "Batch"

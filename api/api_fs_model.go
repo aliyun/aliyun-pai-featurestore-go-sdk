@@ -4,7 +4,7 @@ import (
 	"context"
 	"strconv"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/antihax/optional"
 )
@@ -101,8 +101,8 @@ func (a *FsModelApiService) ListModels(pagesize, pagenumber int, projectId strin
 		localVarReturnValue ListModelsResponse
 	)
 	request := paifeaturestore.ListModelFeaturesRequest{}
-	request.SetPageSize(strconv.Itoa(pagesize))
-	request.SetPageNumber(strconv.Itoa(pagenumber))
+	request.SetPageSize(int32(pagesize))
+	request.SetPageNumber(int32(pagenumber))
 	request.SetProjectId(projectId)
 
 	response, err := a.client.ListModelFeatures(&a.client.instanceId, &request)

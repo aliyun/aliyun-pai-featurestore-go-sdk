@@ -63,4 +63,11 @@ type DaoConfig struct {
 	TableStoreOfflineTableName string
 	// igraph sequence table
 	IgraphEdgeName string
+
+	// featuredb
+	FeatureDBDatabaseName string
+	FeatureDBSchemaName   string
+	FeatureDBTableName    string
+	FieldIndexMap         map[string]int
+	FeatureDBSignature    string
 }

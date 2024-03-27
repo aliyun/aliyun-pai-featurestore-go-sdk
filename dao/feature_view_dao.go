@@ -25,6 +25,8 @@ func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 		return NewFeatureViewRedisDao(config)
 	} else if config.DatasourceType == constants.Datasource_Type_TableStore {
 		return NewFeatureViewTableStoreDao(config)
+	} else if config.DatasourceType == constants.Datasource_Type_FeatureDB {
+		return NewFeatureViewFeatureDBDao(config)
 	}
 
 	panic("not found FeatureViewDao implement")

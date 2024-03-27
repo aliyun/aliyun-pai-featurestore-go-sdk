@@ -1,6 +1,7 @@
 package featurestore
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"time"
@@ -49,6 +50,15 @@ func WithTestMode() ClientOption {
 	}
 }
 
+func WithFeatureDBLogin(username, password string) ClientOption {
+	return func(e *FeatureStoreClient) {
+		auth := username + ":" + password
+		signature := base64.StdEncoding.EncodeToString([]byte(auth))
+
+		e.signature = signature
+	}
+}
+
 type FeatureStoreClient struct {
 	// loopLoadData flag to invoke loopLoadProjectData  function
 	loopLoadData bool
@@ -70,6 +80,9 @@ type FeatureStoreClient struct {
 
 	// testMode to get features by public address
 	testMode bool
+
+	// signature to get data from featurestore db
+	signature string
 }
 
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
@@ -176,6 +189,15 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		p.OfflineDataSource = getDataSourceResponse.Datasource
 		p.OfflineDataSource.Ak = ak
 		p.OfflineDataSource.TestMode = c.testMode
+
+		// get featuredb datasource
+		p.FeatureDBAddress, p.FeatureDBToken, err = c.client.DatasourceApi.GetFeatureDBDatasourceInfo(c.testMode, p.OfflineDataSource.WorkspaceId)
+		if err != nil {
+			c.logError(fmt.Errorf("get featuredb datasource, err=%v", err))
+			return
+		}
+
+		p.Signature = c.signature
 
 		project := domain.NewProject(p, c.datasourceInitClient)
 		projectData[project.ProjectName] = project
