@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
@@ -130,25 +129,43 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				for i := 0; i < recordBlock.ValuesLength(); i++ {
 					value := new(fdbserverfb.UInt8ValueColumn)
 					recordBlock.Values(value, i)
-					data := string(value.ValueBytes())
+					dataBytes := value.ValueBytes()
 					// key 不存在
-					if data == "" {
+					if len(dataBytes) == 0 {
 						fmt.Println("key ", ks[keyStartIdx+i], " not exists")
 						continue
 					}
+					separator := []byte("\u001E")
+					fieldValues := bytes.Split(dataBytes, separator)
 
-					fieldValues := strings.Split(data, "\u001E")
 					properties := make(map[string]interface{}, len(fieldValues)+1)
 
 					for _, field := range selectFields {
 						fieldIdx := d.fieldIndexMap[field]
+						reader := bytes.NewReader(fieldValues[fieldIdx])
 						switch d.fieldTypeMap[field] {
-						case constants.FS_DOUBLE, constants.FS_FLOAT:
-							properties[field] = utils.ToFloat(fieldValues[fieldIdx], -1024)
-						case constants.FS_INT32, constants.FS_INT64:
-							properties[field] = utils.ToInt(fieldValues[fieldIdx], -1024)
+						case constants.FS_DOUBLE:
+							var float64Value float64
+							binary.Read(reader, binary.LittleEndian, &float64Value)
+							properties[field] = float64Value
+						case constants.FS_FLOAT:
+							var float32Value float32
+							binary.Read(reader, binary.LittleEndian, &float32Value)
+							properties[field] = float32Value
+						case constants.FS_INT64:
+							var int64Value int64
+							binary.Read(reader, binary.LittleEndian, &int64Value)
+							properties[field] = int64Value
+						case constants.FS_INT32:
+							var int32Value int32
+							binary.Read(reader, binary.LittleEndian, &int32Value)
+							properties[field] = int32Value
+						case constants.FS_BOOLEAN:
+							var booleanValue bool
+							binary.Read(reader, binary.LittleEndian, &booleanValue)
+							properties[field] = booleanValue
 						default:
-							properties[field] = fieldValues[fieldIdx]
+							properties[field] = string(fieldValues[fieldIdx])
 						}
 					}
 					properties[d.primaryKeyField] = ks[keyStartIdx+i]
