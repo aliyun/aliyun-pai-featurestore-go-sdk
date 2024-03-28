@@ -20,6 +20,14 @@ projectName := "fs_test_ots"
 client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName)
 ```
 
+如果需要从 FeatureStore 在线存储 FeatureDB 中读取数据，初始化 client 需要填写开通 FeatureDB 时设置的用户名和密码（工作空间管理员可在控制台 数据源 页面进行修改）：
+
+```go
+username := os.Getenv("FeatureDBUsername")
+password := os.Getenv("FeatureDBPassword")
+client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName, WithFeatureDBLogin(username, password))
+```
+
 由于 SDK 是直连 onlinestore 的， client 需要在 VPC 环境运行。 比如 hologres/graphcompute , 需要在指定的 VPC 才能连接。
 
 如果需要在本地非 VPC 环境下进行测试，初始化 client 需要加上 WithTestMode()，此时连接 FeatureStore 和 onlinestore 均会使用公网地址。

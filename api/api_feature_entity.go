@@ -3,7 +3,7 @@ package api
 import (
 	"strconv"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
 )
 
 type FeatureEntityApiService service

@@ -63,6 +63,10 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 		panic("deduplication_method invalid")
 	}
 
+	if p.OnlineDatasourceType == constants.Datasource_Type_FeatureDB || view.WriteToFeatureDB {
+		panic("sequence feature view not support featuredb yet")
+	}
+
 	daoConfig := dao.DaoConfig{
 		DatasourceType:  p.OnlineDatasourceType,
 		PrimaryKeyField: sequenceFeatureView.userIdField,
