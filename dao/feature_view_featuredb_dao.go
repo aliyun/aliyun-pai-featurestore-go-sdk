@@ -137,7 +137,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 					recordBlock.Values(value, i)
 					dataBytes := value.ValueBytes()
 					// key 不存在
-					if len(dataBytes) == 0 {
+					if len(dataBytes) < 2 {
 						fmt.Println("key ", ks[keyStartIdx+i], " not exists")
 						continue
 					}
@@ -198,6 +198,8 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 
 					if protocalVersion == FeatureDB_Protocal_Version_F && ifNullFlagVersion == FeatureDB_IfNull_Flag_Version_1 {
 						innerResult = append(innerResult, readFeatureDBFunc_F_1)
+					} else {
+						panic(fmt.Sprintf("protocalVersion %v or ifNullFlagVersion %d is not supported\n", protocalVersion, ifNullFlagVersion))
 					}
 				}
 				keyStartIdx += recordBlock.ValuesLength()
