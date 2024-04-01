@@ -19,6 +19,11 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
+const (
+	FeatureDB_Protocal_Version_F    = byte('F')
+	FeatureDB_IfNull_Flag_Version_1 = byte('1')
+)
+
 type FeatureViewFeatureDBDao struct {
 	featureDBClient *http.Client
 	database        string
@@ -26,7 +31,6 @@ type FeatureViewFeatureDBDao struct {
 	table           string
 	address         string
 	token           string
-	fieldIndexMap   map[string]int
 	fieldTypeMap    map[string]constants.FSType
 	signature       string
 	primaryKeyField string
@@ -37,7 +41,6 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		database:        config.FeatureDBDatabaseName,
 		schema:          config.FeatureDBSchemaName,
 		table:           config.FeatureDBTableName,
-		fieldIndexMap:   config.FieldIndexMap,
 		fieldTypeMap:    config.FieldTypeMap,
 		signature:       config.FeatureDBSignature,
 		primaryKeyField: config.PrimaryKeyField,
@@ -96,6 +99,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				log.Println(err)
 				return
 			}
+			defer response.Body.Close() // 确保关闭response.Body
 			// 检查状态码
 			if response.StatusCode != http.StatusOK {
 				bodyBytes, err := io.ReadAll(response.Body)
@@ -115,6 +119,8 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 
 			reader := bufio.NewReader(response.Body)
 			keyStartIdx := 0
+			innerResult := make([]map[string]interface{}, 0, len(ks))
+			innerReader := bytes.NewReader(nil)
 			for {
 				buf, err := deserialize(reader)
 				if err == io.EOF {
@@ -135,47 +141,70 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 						fmt.Println("key ", ks[keyStartIdx+i], " not exists")
 						continue
 					}
-					separator := []byte("\u001E")
-					fieldValues := bytes.Split(dataBytes, separator)
+					innerReader.Reset(dataBytes)
 
-					properties := make(map[string]interface{}, len(fieldValues)+1)
+					// 读取版本号
+					var protocalVersion, ifNullFlagVersion uint8
+					binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
+					binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
 
-					for _, field := range selectFields {
-						fieldIdx := d.fieldIndexMap[field]
-						reader := bytes.NewReader(fieldValues[fieldIdx])
-						switch d.fieldTypeMap[field] {
-						case constants.FS_DOUBLE:
-							var float64Value float64
-							binary.Read(reader, binary.LittleEndian, &float64Value)
-							properties[field] = float64Value
-						case constants.FS_FLOAT:
-							var float32Value float32
-							binary.Read(reader, binary.LittleEndian, &float32Value)
-							properties[field] = float32Value
-						case constants.FS_INT64:
-							var int64Value int64
-							binary.Read(reader, binary.LittleEndian, &int64Value)
-							properties[field] = int64Value
-						case constants.FS_INT32:
-							var int32Value int32
-							binary.Read(reader, binary.LittleEndian, &int32Value)
-							properties[field] = int32Value
-						case constants.FS_BOOLEAN:
-							var booleanValue bool
-							binary.Read(reader, binary.LittleEndian, &booleanValue)
-							properties[field] = booleanValue
-						default:
-							properties[field] = string(fieldValues[fieldIdx])
+					readFeatureDBFunc_F_1 := func() map[string]interface{} {
+						properties := make(map[string]interface{})
+
+						for _, field := range selectFields {
+							if field == d.primaryKeyField {
+								continue
+							}
+							var isNull uint8
+							binary.Read(innerReader, binary.LittleEndian, &isNull)
+
+							if isNull == 1 {
+								// 跳过空值
+								continue
+							}
+							switch d.fieldTypeMap[field] {
+							case constants.FS_DOUBLE:
+								var float64Value float64
+								binary.Read(innerReader, binary.LittleEndian, &float64Value)
+								properties[field] = float64Value
+							case constants.FS_FLOAT:
+								var float32Value float32
+								binary.Read(innerReader, binary.LittleEndian, &float32Value)
+								properties[field] = float32Value
+							case constants.FS_INT64:
+								var int64Value int64
+								binary.Read(innerReader, binary.LittleEndian, &int64Value)
+								properties[field] = int64Value
+							case constants.FS_INT32:
+								var int32Value int32
+								binary.Read(innerReader, binary.LittleEndian, &int32Value)
+								properties[field] = int32Value
+							case constants.FS_BOOLEAN:
+								var booleanValue bool
+								binary.Read(innerReader, binary.LittleEndian, &booleanValue)
+								properties[field] = booleanValue
+							default:
+								var length uint32
+								binary.Read(innerReader, binary.LittleEndian, &length)
+								strBytes := make([]byte, length)
+								binary.Read(innerReader, binary.LittleEndian, &strBytes)
+								properties[field] = string(strBytes)
+							}
 						}
+						properties[d.primaryKeyField] = ks[keyStartIdx+i]
+
+						return properties
+					}()
+
+					if protocalVersion == FeatureDB_Protocal_Version_F && ifNullFlagVersion == FeatureDB_IfNull_Flag_Version_1 {
+						innerResult = append(innerResult, readFeatureDBFunc_F_1)
 					}
-					properties[d.primaryKeyField] = ks[keyStartIdx+i]
-					mu.Lock()
-					result = append(result, properties)
-					mu.Unlock()
 				}
 				keyStartIdx += recordBlock.ValuesLength()
 			}
-			response.Body.Close()
+			mu.Lock()
+			result = append(result, innerResult...)
+			mu.Unlock()
 		}(ks)
 
 	}

@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -108,6 +107,6 @@ func (a *DatasourceApiService) GetFeatureDBDatasourceInfo(isTestMode bool, works
 		}
 	}
 
-	return "", "", errors.New("FeatureDB datasource not exists")
+	return "", "", nil
 
 }

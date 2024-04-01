@@ -36,7 +36,7 @@ func InitFeatureDBClient(address, token string) {
 
 func GetFeatureDBClient() (*FeatureDBClient, error) {
 	if featureDBClient == nil {
-		return nil, fmt.Errorf("FeatureDB client has not been initialized")
+		return nil, fmt.Errorf("FeatureDB has not been provisioned")
 	}
 
 	return featureDBClient, nil

@@ -68,6 +68,5 @@ type DaoConfig struct {
 	FeatureDBDatabaseName string
 	FeatureDBSchemaName   string
 	FeatureDBTableName    string
-	FieldIndexMap         map[string]int
 	FeatureDBSignature    string
 }

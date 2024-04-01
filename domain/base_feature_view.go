@@ -52,21 +52,14 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 		daoConfig.FeatureDBTableName = featureView.Name
 		daoConfig.FeatureDBSignature = p.Signature
 
-		fieldIndexMap := make(map[string]int, len(view.Fields)-1)
 		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields)-1)
-		position := 0
 		for _, field := range view.Fields {
 			if field.IsPartition {
 				continue
-			} else if field.IsPrimaryKey {
-				fieldTypeMap[field.Name] = constants.FSType(field.Type)
 			} else {
-				fieldIndexMap[field.Name] = position
 				fieldTypeMap[field.Name] = constants.FSType(field.Type)
-				position++
 			}
 		}
-		daoConfig.FieldIndexMap = fieldIndexMap
 		daoConfig.FieldTypeMap = fieldTypeMap
 	} else {
 		switch p.OnlineDatasourceType {

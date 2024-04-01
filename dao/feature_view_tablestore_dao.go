@@ -217,6 +217,7 @@ func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, us
 	}
 
 	results := make([]map[string]interface{}, 0, len(keys))
+	var outmu sync.Mutex
 
 	var wg sync.WaitGroup
 	for _, key := range keys {
@@ -264,7 +265,9 @@ func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, us
 			eventWg.Wait()
 
 			properties[userIdField] = key
+			outmu.Lock()
 			results = append(results, properties)
+			outmu.Unlock()
 		}(key)
 	}
 
