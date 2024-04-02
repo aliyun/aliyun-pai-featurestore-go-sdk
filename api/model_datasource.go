@@ -12,6 +12,7 @@ type Datasource struct {
 	Type          string `json:"type"`
 	Name          string `json:"name"`
 	Region        string `json:"region,omitempty"`
+	WorkspaceId   string `json:"workspace_id"`
 	VpcAddress    string `json:"vpc_address,omitempty"`
 	PublicAddress string `json:"public_address,omitempty"`
 	Project       string `json:"project,omitempty"`

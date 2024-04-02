@@ -3,6 +3,7 @@ package domain
 import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/hologres"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/igraph"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/tablestore"
@@ -59,8 +60,18 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 			tablestore.RegisterTableStoreClient(onlineStore.Name, client)
 		}
 		project.OnlineStore = onlineStore
+	case constants.Datasource_Type_FeatureDB:
+		onlineStore := &FeatureDBOnlineStore{
+			Datasource: p.OnlineDataSource,
+		}
+
+		project.OnlineStore = onlineStore
 	default:
 		panic("not support onlinestore type")
+	}
+
+	if isInitClient && p.FeatureDBAddress != "" && p.FeatureDBToken != "" {
+		featuredb.InitFeatureDBClient(p.FeatureDBAddress, p.FeatureDBToken)
 	}
 
 	return &project

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 )
 
@@ -33,6 +34,8 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int) (GetD
 		DatasourceId: datasourceId,
 		Type:         *response.Body.Type,
 		Name:         *response.Body.Name,
+		Region:       a.client.cfg.regionId,
+		WorkspaceId:  *response.Body.WorkspaceId,
 	}
 	switch *response.Body.Type {
 	case "Hologres":
@@ -60,9 +63,50 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int) (GetD
 	case "MaxCompute":
 		datasource.Type = constants.Datasource_Type_MaxCompute
 		datasource.Project = *response.Body.Uri
+	case "FeatureDB":
+		datasource.Type = constants.Datasource_Type_FeatureDB
+		var config map[string]string
+		if err := json.Unmarshal([]byte(*response.Body.Config), &config); err == nil {
+			datasource.VpcAddress = config["fdb_vpc_address"]
+			datasource.PublicAddress = config["fdb_public_address"]
+			datasource.Token = config["token"]
+		}
 	}
 
 	localVarReturnValue.Datasource = &datasource
 
 	return localVarReturnValue, nil
+}
+
+func (a *DatasourceApiService) GetFeatureDBDatasourceInfo(isTestMode bool, workspaceId string) (string, string, error) {
+
+	featureDBType := "FeatureDB"
+	request := paifeaturestore.ListDatasourcesRequest{
+		Type:        &featureDBType,
+		WorkspaceId: &workspaceId,
+	}
+	listDatasourcesResponse, err := a.client.ListDatasources(&a.client.instanceId, &request)
+	if err != nil {
+		return "", "", err
+	}
+
+	for _, datasource := range listDatasourcesResponse.Body.Datasources {
+		if _, err := strconv.Atoi(*datasource.DatasourceId); err == nil {
+			response, err := a.client.GetDatasource(&a.client.instanceId, datasource.DatasourceId)
+			if err != nil {
+				return "", "", err
+			}
+			var config map[string]string
+			if err := json.Unmarshal([]byte(*response.Body.Config), &config); err == nil {
+				if isTestMode {
+					return config["fdb_public_address"], config["token"], nil
+				} else {
+					return config["fdb_vpc_address"], config["token"], nil
+				}
+			}
+		}
+	}
+
+	return "", "", nil
+
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strconv"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 )
 
@@ -39,6 +39,11 @@ func (a *FeatureViewApiService) GetFeatureViewByID(featureViewId string) (GetFea
 		Online:            *response.Body.SyncOnlineTable,
 		Ttl:               int(*response.Body.TTL),
 		Config:            *response.Body.Config,
+	}
+	if response.Body.WriteToFeatureDB != nil {
+		featureView.WriteToFeatureDB = *response.Body.WriteToFeatureDB
+	} else {
+		featureView.WriteToFeatureDB = false
 	}
 	if response.Body.RegisterTable != nil && *response.Body.RegisterTable != "" {
 		featureView.RegisterTable = *response.Body.RegisterTable
@@ -142,6 +147,11 @@ func (a *FeatureViewApiService) ListFeatureViews(pagesize, pagenumber int32, pro
 				Type:              *view.Type,
 				FeatureEntityName: *view.FeatureEntityName,
 				ProjectName:       *view.ProjectName,
+			}
+			if view.WriteToFeatureDB != nil {
+				featureView.WriteToFeatureDB = *view.WriteToFeatureDB
+			} else {
+				featureView.WriteToFeatureDB = false
 			}
 			if id, err := strconv.Atoi(*view.ProjectId); err == nil {
 				featureView.ProjectId = id

@@ -5,7 +5,7 @@ import (
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
 )
 
 var (

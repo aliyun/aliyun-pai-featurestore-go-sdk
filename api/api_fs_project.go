@@ -4,7 +4,7 @@ import (
 	"context"
 	"strconv"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 )
 
@@ -59,7 +59,11 @@ func (a *FsProjectApiService) ListProjects() (ListProjectsResponse, error) {
 				project.OnlineDatasourceType = constants.Datasource_Type_IGraph
 			case "Tablestore":
 				project.OnlineDatasourceType = constants.Datasource_Type_TableStore
+			case "FeatureDB":
+				project.OnlineDatasourceType = constants.Datasource_Type_FeatureDB
 			}
+
+			project.InstanceId = a.client.instanceId
 
 			projects = append(projects, &project)
 		}
