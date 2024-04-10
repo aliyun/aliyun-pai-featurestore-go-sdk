@@ -71,7 +71,7 @@ func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields 
 					if v, ok := key.(int64); ok {
 						pkToGet.AddPrimaryKeyColumn(d.primaryKeyField, v)
 					} else {
-						s, _ := key.(string)
+						s := fmt.Sprintf("%v", key)
 						i, _ := strconv.ParseInt(s, 10, 64)
 						pkToGet.AddPrimaryKeyColumn(d.primaryKeyField, i)
 					}
