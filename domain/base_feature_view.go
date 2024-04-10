@@ -28,6 +28,7 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 	for _, field := range view.Fields {
 		if field.IsEventTime {
 			featureView.eventTimeField = *field
+			featureView.featureFields = append(featureView.featureFields, field.Name)
 		} else if field.IsPartition {
 			continue
 		} else if field.IsPrimaryKey {
