@@ -32,6 +32,7 @@ type FeatureViewFeatureDBDao struct {
 	address         string
 	token           string
 	fieldTypeMap    map[string]constants.FSType
+	fields          []string
 	signature       string
 	primaryKeyField string
 }
@@ -44,6 +45,7 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		fieldTypeMap:    config.FieldTypeMap,
 		signature:       config.FeatureDBSignature,
 		primaryKeyField: config.PrimaryKeyField,
+		fields:          config.Fields,
 	}
 	client, err := featuredb.GetFeatureDBClient()
 	if err != nil {
@@ -60,6 +62,11 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 
 func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0, len(keys))
+	selectFieldsSet := make(map[string]struct{})
+	for _, selectField := range selectFields {
+		selectFieldsSet[selectField] = struct{}{}
+	}
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	const groupSize = 200
@@ -151,10 +158,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 					readFeatureDBFunc_F_1 := func() map[string]interface{} {
 						properties := make(map[string]interface{})
 
-						for _, field := range selectFields {
-							if field == d.primaryKeyField {
-								continue
-							}
+						for _, field := range d.fields {
 							var isNull uint8
 							binary.Read(innerReader, binary.LittleEndian, &isNull)
 
@@ -162,33 +166,58 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 								// 跳过空值
 								continue
 							}
-							switch d.fieldTypeMap[field] {
-							case constants.FS_DOUBLE:
-								var float64Value float64
-								binary.Read(innerReader, binary.LittleEndian, &float64Value)
-								properties[field] = float64Value
-							case constants.FS_FLOAT:
-								var float32Value float32
-								binary.Read(innerReader, binary.LittleEndian, &float32Value)
-								properties[field] = float32Value
-							case constants.FS_INT64:
-								var int64Value int64
-								binary.Read(innerReader, binary.LittleEndian, &int64Value)
-								properties[field] = int64Value
-							case constants.FS_INT32:
-								var int32Value int32
-								binary.Read(innerReader, binary.LittleEndian, &int32Value)
-								properties[field] = int32Value
-							case constants.FS_BOOLEAN:
-								var booleanValue bool
-								binary.Read(innerReader, binary.LittleEndian, &booleanValue)
-								properties[field] = booleanValue
-							default:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								strBytes := make([]byte, length)
-								binary.Read(innerReader, binary.LittleEndian, &strBytes)
-								properties[field] = string(strBytes)
+							if _, exists := selectFieldsSet[field]; exists {
+								switch d.fieldTypeMap[field] {
+								case constants.FS_DOUBLE:
+									var float64Value float64
+									binary.Read(innerReader, binary.LittleEndian, &float64Value)
+									properties[field] = float64Value
+								case constants.FS_FLOAT:
+									var float32Value float32
+									binary.Read(innerReader, binary.LittleEndian, &float32Value)
+									properties[field] = float32Value
+								case constants.FS_INT64:
+									var int64Value int64
+									binary.Read(innerReader, binary.LittleEndian, &int64Value)
+									properties[field] = int64Value
+								case constants.FS_INT32:
+									var int32Value int32
+									binary.Read(innerReader, binary.LittleEndian, &int32Value)
+									properties[field] = int32Value
+								case constants.FS_BOOLEAN:
+									var booleanValue bool
+									binary.Read(innerReader, binary.LittleEndian, &booleanValue)
+									properties[field] = booleanValue
+								default:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									strBytes := make([]byte, length)
+									binary.Read(innerReader, binary.LittleEndian, &strBytes)
+									properties[field] = string(strBytes)
+								}
+							} else {
+								var skipBytes int
+								switch d.fieldTypeMap[field] {
+								case constants.FS_DOUBLE:
+									skipBytes = 8
+								case constants.FS_FLOAT:
+									skipBytes = 4
+								case constants.FS_INT64:
+									skipBytes = 8
+								case constants.FS_INT32:
+									skipBytes = 4
+								case constants.FS_BOOLEAN:
+									skipBytes = 1
+								default:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length)
+								}
+
+								skipData := make([]byte, skipBytes)
+								if _, err := io.ReadFull(innerReader, skipData); err != nil {
+									panic(err)
+								}
 							}
 						}
 						properties[d.primaryKeyField] = ks[keyStartIdx+i]
