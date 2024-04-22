@@ -77,6 +77,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 		return result, errors.New("FeatureDB datasource has not been created")
 	}
 
+	errChan := make(chan error, len(keys)/groupSize+1)
 	for i := 0; i < len(keys); i += groupSize {
 		end := i + groupSize
 		if end > len(keys) {
@@ -155,12 +156,14 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 					binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
 					binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
 
-					readFeatureDBFunc_F_1 := func() map[string]interface{} {
+					readFeatureDBFunc_F_1 := func() (map[string]interface{}, error) {
 						properties := make(map[string]interface{})
 
 						for _, field := range d.fields {
 							var isNull uint8
-							binary.Read(innerReader, binary.LittleEndian, &isNull)
+							if err := binary.Read(innerReader, binary.LittleEndian, &isNull); err != nil {
+								return nil, err
+							}
 
 							if isNull == 1 {
 								// 跳过空值
@@ -216,19 +219,27 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 
 								skipData := make([]byte, skipBytes)
 								if _, err := io.ReadFull(innerReader, skipData); err != nil {
-									panic(err)
+									return nil, err
 								}
 							}
 						}
 						properties[d.primaryKeyField] = ks[keyStartIdx+i]
 
-						return properties
-					}()
+						return properties, nil
+					}
 
 					if protocalVersion == FeatureDB_Protocal_Version_F && ifNullFlagVersion == FeatureDB_IfNull_Flag_Version_1 {
-						innerResult = append(innerResult, readFeatureDBFunc_F_1)
+						readResult, err := readFeatureDBFunc_F_1()
+						if err != nil {
+							errChan <- err
+							fmt.Println(err)
+							return
+						}
+						innerResult = append(innerResult, readResult)
 					} else {
-						panic(fmt.Sprintf("protocalVersion %v or ifNullFlagVersion %d is not supported\n", protocalVersion, ifNullFlagVersion))
+						errChan <- fmt.Errorf("FeatureDB read key %v error: protocalVersion %v or ifNullFlagVersion %d is not supported", ks[keyStartIdx+i], protocalVersion, ifNullFlagVersion)
+						fmt.Printf("FeatureDB read key %v error: protocalVersion %v or ifNullFlagVersion %d is not supported", ks[keyStartIdx+i], protocalVersion, ifNullFlagVersion)
+						return
 					}
 				}
 				keyStartIdx += recordBlock.ValuesLength()
@@ -240,6 +251,13 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 
 	}
 	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return result, nil
 }
