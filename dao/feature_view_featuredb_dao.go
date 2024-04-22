@@ -32,6 +32,7 @@ type FeatureViewFeatureDBDao struct {
 	address         string
 	token           string
 	fieldTypeMap    map[string]constants.FSType
+	fields          []string
 	signature       string
 	primaryKeyField string
 }
@@ -44,6 +45,7 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		fieldTypeMap:    config.FieldTypeMap,
 		signature:       config.FeatureDBSignature,
 		primaryKeyField: config.PrimaryKeyField,
+		fields:          config.Fields,
 	}
 	client, err := featuredb.GetFeatureDBClient()
 	if err != nil {
@@ -60,6 +62,11 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 
 func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0, len(keys))
+	selectFieldsSet := make(map[string]struct{})
+	for _, selectField := range selectFields {
+		selectFieldsSet[selectField] = struct{}{}
+	}
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	const groupSize = 200
@@ -70,6 +77,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 		return result, errors.New("FeatureDB datasource has not been created")
 	}
 
+	errChan := make(chan error, len(keys)/groupSize+1)
 	for i := 0; i < len(keys); i += groupSize {
 		end := i + groupSize
 		if end > len(keys) {
@@ -148,58 +156,90 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 					binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
 					binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
 
-					readFeatureDBFunc_F_1 := func() map[string]interface{} {
+					readFeatureDBFunc_F_1 := func() (map[string]interface{}, error) {
 						properties := make(map[string]interface{})
 
-						for _, field := range selectFields {
-							if field == d.primaryKeyField {
-								continue
-							}
+						for _, field := range d.fields {
 							var isNull uint8
-							binary.Read(innerReader, binary.LittleEndian, &isNull)
+							if err := binary.Read(innerReader, binary.LittleEndian, &isNull); err != nil {
+								return nil, err
+							}
 
 							if isNull == 1 {
 								// 跳过空值
 								continue
 							}
-							switch d.fieldTypeMap[field] {
-							case constants.FS_DOUBLE:
-								var float64Value float64
-								binary.Read(innerReader, binary.LittleEndian, &float64Value)
-								properties[field] = float64Value
-							case constants.FS_FLOAT:
-								var float32Value float32
-								binary.Read(innerReader, binary.LittleEndian, &float32Value)
-								properties[field] = float32Value
-							case constants.FS_INT64:
-								var int64Value int64
-								binary.Read(innerReader, binary.LittleEndian, &int64Value)
-								properties[field] = int64Value
-							case constants.FS_INT32:
-								var int32Value int32
-								binary.Read(innerReader, binary.LittleEndian, &int32Value)
-								properties[field] = int32Value
-							case constants.FS_BOOLEAN:
-								var booleanValue bool
-								binary.Read(innerReader, binary.LittleEndian, &booleanValue)
-								properties[field] = booleanValue
-							default:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								strBytes := make([]byte, length)
-								binary.Read(innerReader, binary.LittleEndian, &strBytes)
-								properties[field] = string(strBytes)
+							if _, exists := selectFieldsSet[field]; exists {
+								switch d.fieldTypeMap[field] {
+								case constants.FS_DOUBLE:
+									var float64Value float64
+									binary.Read(innerReader, binary.LittleEndian, &float64Value)
+									properties[field] = float64Value
+								case constants.FS_FLOAT:
+									var float32Value float32
+									binary.Read(innerReader, binary.LittleEndian, &float32Value)
+									properties[field] = float32Value
+								case constants.FS_INT64:
+									var int64Value int64
+									binary.Read(innerReader, binary.LittleEndian, &int64Value)
+									properties[field] = int64Value
+								case constants.FS_INT32:
+									var int32Value int32
+									binary.Read(innerReader, binary.LittleEndian, &int32Value)
+									properties[field] = int32Value
+								case constants.FS_BOOLEAN:
+									var booleanValue bool
+									binary.Read(innerReader, binary.LittleEndian, &booleanValue)
+									properties[field] = booleanValue
+								default:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									strBytes := make([]byte, length)
+									binary.Read(innerReader, binary.LittleEndian, &strBytes)
+									properties[field] = string(strBytes)
+								}
+							} else {
+								var skipBytes int
+								switch d.fieldTypeMap[field] {
+								case constants.FS_DOUBLE:
+									skipBytes = 8
+								case constants.FS_FLOAT:
+									skipBytes = 4
+								case constants.FS_INT64:
+									skipBytes = 8
+								case constants.FS_INT32:
+									skipBytes = 4
+								case constants.FS_BOOLEAN:
+									skipBytes = 1
+								default:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length)
+								}
+
+								skipData := make([]byte, skipBytes)
+								if _, err := io.ReadFull(innerReader, skipData); err != nil {
+									return nil, err
+								}
 							}
 						}
 						properties[d.primaryKeyField] = ks[keyStartIdx+i]
 
-						return properties
-					}()
+						return properties, nil
+					}
 
 					if protocalVersion == FeatureDB_Protocal_Version_F && ifNullFlagVersion == FeatureDB_IfNull_Flag_Version_1 {
-						innerResult = append(innerResult, readFeatureDBFunc_F_1)
+						readResult, err := readFeatureDBFunc_F_1()
+						if err != nil {
+							errChan <- err
+							fmt.Println(err)
+							return
+						}
+						innerResult = append(innerResult, readResult)
 					} else {
-						panic(fmt.Sprintf("protocalVersion %v or ifNullFlagVersion %d is not supported\n", protocalVersion, ifNullFlagVersion))
+						errChan <- fmt.Errorf("FeatureDB read key %v error: protocalVersion %v or ifNullFlagVersion %d is not supported", ks[keyStartIdx+i], protocalVersion, ifNullFlagVersion)
+						fmt.Printf("FeatureDB read key %v error: protocalVersion %v or ifNullFlagVersion %d is not supported", ks[keyStartIdx+i], protocalVersion, ifNullFlagVersion)
+						return
 					}
 				}
 				keyStartIdx += recordBlock.ValuesLength()
@@ -211,6 +251,13 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 
 	}
 	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return result, nil
 }

@@ -101,6 +101,9 @@ func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields 
 						log.Println(errors.New(rowResult.Error.Message))
 						return
 					}
+					if rowResult.PrimaryKey.PrimaryKeys == nil {
+						continue
+					}
 					newMap := make(map[string]interface{})
 					for _, pkValue := range rowResult.PrimaryKey.PrimaryKeys {
 						newMap[pkValue.ColumnName] = pkValue.Value

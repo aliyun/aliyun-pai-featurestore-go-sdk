@@ -49,10 +49,10 @@ type DaoConfig struct {
 	SaveOriginalField bool
 
 	FieldMap map[string]string
-	// redis, tablestore
+	// redis, tablestore, featuredb
 	FieldTypeMap map[string]constants.FSType
 
-	// redis
+	// redis, featuredb
 	Fields []string
 
 	// hologres sequence tables

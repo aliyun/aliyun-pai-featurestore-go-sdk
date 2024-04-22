@@ -53,7 +53,7 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 		daoConfig.FeatureDBTableName = featureView.Name
 		daoConfig.FeatureDBSignature = p.Signature
 
-		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields)-1)
+		fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
 		for _, field := range view.Fields {
 			if field.IsPartition {
 				continue
@@ -62,6 +62,7 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 			}
 		}
 		daoConfig.FieldTypeMap = fieldTypeMap
+		daoConfig.Fields = featureView.featureFields
 	} else {
 		switch p.OnlineDatasourceType {
 		case constants.Datasource_Type_Hologres:
