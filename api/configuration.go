@@ -6,7 +6,7 @@ type Configuration struct {
 	regionId        string
 	AccessKeyId     string
 	AccessKeySecret string
-	projectName     string
+	ProjectName     string
 	UserAgent       string
 	domain          string
 }
@@ -15,7 +15,7 @@ func NewConfiguration(regionId, accessKeyId, accessKeySecret, projectName string
 	cfg := &Configuration{
 		UserAgent:       "PAI-FeatureStore/1.0.0/go",
 		regionId:        regionId,
-		projectName:     projectName,
+		ProjectName:     projectName,
 		AccessKeyId:     accessKeyId,
 		AccessKeySecret: accessKeySecret,
 	}

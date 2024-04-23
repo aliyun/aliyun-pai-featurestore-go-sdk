@@ -22,7 +22,7 @@ FsProjectApiService List Projects
 */
 func (a *FsProjectApiService) ListProjects() (ListProjectsResponse, error) {
 	request := paifeaturestore.ListProjectsRequest{}
-	request.SetName(a.client.cfg.projectName)
+	request.SetName(a.client.cfg.ProjectName)
 
 	response, err := a.client.ListProjects(&a.client.instanceId, &request)
 	var (
