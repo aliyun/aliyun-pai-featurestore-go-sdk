@@ -169,6 +169,9 @@ func (c *FeatureStoreClient) LoadProjectData() {
 	}
 
 	for _, p := range listProjectsResponse.Projects {
+		if p.ProjectName != c.client.GetConfig().ProjectName {
+			continue
+		}
 		// get datasource
 		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId)
 		if err != nil {
