@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -134,14 +135,18 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig)
 
-	onlineFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
+	onlineFunc := func(seqEvent string, sequence_events []interface{}, seqLen int, key interface{}) []*sequenceInfo {
 		onlineSequences := []*sequenceInfo{}
 		builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
 		builder.Select(selectFields...)
 		builder.From(d.onlineTable)
 		where := []string{builder.Equal(fmt.Sprintf("\"%s\"", userIdField), key),
-			builder.GreaterThan(fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField), currTime-86400*5),
-			builder.Equal(fmt.Sprintf("\"%s\"", sequenceConfig.EventField), seqEvent)}
+			builder.GreaterThan(fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField), currTime-86400*5)}
+		if len(sequence_events) > 1 {
+			where = append(where, builder.In(fmt.Sprintf("\"%s\"", sequenceConfig.EventField), sequence_events...))
+		} else {
+			where = append(where, builder.Equal(fmt.Sprintf("\"%s\"", sequenceConfig.EventField), seqEvent))
+		}
 		builder.Where(where...)
 		builder.Limit(seqLen)
 		builder.OrderBy(fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField)).Desc()
@@ -181,7 +186,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 				dst = []interface{}{&seq.itemId, &seq.event, &seq.timestamp, &seq.playTime}
 			}
 			if err := rows.Scan(dst...); err == nil {
-				if t, exist := sequencePlayTimeMap[seqEvent]; exist {
+				if t, exist := sequencePlayTimeMap[seq.event]; exist {
 					if seq.playTime <= t {
 						continue
 					}
@@ -196,13 +201,17 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 		return onlineSequences
 	}
 
-	offlineFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
+	offlineFunc := func(seqEvent string, sequence_events []interface{}, seqLen int, key interface{}) []*sequenceInfo {
 		offlineSequences := []*sequenceInfo{}
 		builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
 		builder.Select(selectFields...)
 		builder.From(d.offlineTable)
-		where := []string{builder.Equal(fmt.Sprintf("\"%s\"", userIdField), key),
-			builder.Equal(fmt.Sprintf("\"%s\"", sequenceConfig.EventField), seqEvent)}
+		where := []string{builder.Equal(fmt.Sprintf("\"%s\"", userIdField), key)}
+		if len(sequence_events) > 1 {
+			where = append(where, builder.In(fmt.Sprintf("\"%s\"", sequenceConfig.EventField), sequence_events...))
+		} else {
+			where = append(where, builder.Equal(fmt.Sprintf("\"%s\"", sequenceConfig.EventField), seqEvent))
+		}
 		builder.Where(where...)
 		builder.Limit(seqLen)
 		builder.OrderBy(fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField)).Desc()
@@ -243,7 +252,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 				dst = []interface{}{&seq.itemId, &seq.event, &seq.playTime, &seq.timestamp}
 			}
 			if err := rows.Scan(dst...); err == nil {
-				if t, exist := sequencePlayTimeMap[seqEvent]; exist {
+				if t, exist := sequencePlayTimeMap[seq.event]; exist {
 					if seq.playTime <= t {
 						continue
 					}
@@ -278,23 +287,28 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 					var onlineSequences []*sequenceInfo
 					var offlineSequences []*sequenceInfo
 
+					origin_sequence_events := strings.Split(seqConfig.SeqEvent, "|")
+					sequence_events := make([]interface{}, len(origin_sequence_events))
+					for i, v := range origin_sequence_events {
+						sequence_events[i] = v
+					}
 					var innerWg sync.WaitGroup
 					//get data from online table
 					innerWg.Add(1)
-					go func(seqEvent string, seqLen int, key interface{}) {
+					go func(seqEvent string, sequence_events []interface{}, seqLen int, key interface{}) {
 						defer innerWg.Done()
-						if onlineresult := onlineFunc(seqEvent, seqLen, key); onlineresult != nil {
+						if onlineresult := onlineFunc(seqEvent, sequence_events, seqLen, key); onlineresult != nil {
 							onlineSequences = onlineresult
 						}
-					}(seqConfig.SeqEvent, seqConfig.SeqLen, key)
+					}(seqConfig.SeqEvent, sequence_events, seqConfig.SeqLen, key)
 					//get data from offline table
 					innerWg.Add(1)
-					go func(seqEvent string, seqLen int, key interface{}) {
+					go func(seqEvent string, sequence_events []interface{}, seqLen int, key interface{}) {
 						defer innerWg.Done()
-						if offlineresult := offlineFunc(seqEvent, seqLen, key); offlineresult != nil {
+						if offlineresult := offlineFunc(seqEvent, sequence_events, seqLen, key); offlineresult != nil {
 							offlineSequences = offlineresult
 						}
-					}(seqConfig.SeqEvent, seqConfig.SeqLen, key)
+					}(seqConfig.SeqEvent, sequence_events, seqConfig.SeqLen, key)
 					innerWg.Wait()
 
 					subproperties := makeSequenceFeatures(offlineSequences, onlineSequences, seqConfig, sequenceConfig, currTime)

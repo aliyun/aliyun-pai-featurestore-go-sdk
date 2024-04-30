@@ -119,7 +119,17 @@ func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userId
 
 	fetchDataFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
 		sequences := []*sequenceInfo{}
-		pk := fmt.Sprintf("%v_%s", key, seqEvent)
+		events := strings.Split(seqEvent, "|")
+		var pk string
+		if len(events) > 1 {
+			pks := make([]string, len(events))
+			for i, event := range events {
+				pks[i] = fmt.Sprintf("%v_%s", key, event)
+			}
+			pk = strings.Join(pks, ";")
+		} else {
+			pk = fmt.Sprintf("%v_%s", key, seqEvent)
+		}
 		queryString := fmt.Sprintf("g(\"%s\").E(\"%s\").hasLabel(\"%s\").fields(\"%s\").order().by(\"%s\",Order.decr).limit(%d)",
 			d.group, pk, d.edgeName, strings.Join(selectFields, ";"), sequenceConfig.TimestampField, seqLen)
 		request := aligraph.ReadRequest{
@@ -154,7 +164,7 @@ func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userId
 				if seq.event == "" || seq.itemId == "" {
 					continue
 				}
-				if t, exist := sequencePlayTimeMap[seqEvent]; exist {
+				if t, exist := sequencePlayTimeMap[seq.event]; exist {
 					if seq.playTime <= t {
 						continue
 					}
@@ -186,16 +196,11 @@ func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userId
 					var onlineSequences []*sequenceInfo
 					var offlineSequences []*sequenceInfo
 
-					var innerWg sync.WaitGroup
 					//get data from edge
-					innerWg.Add(1)
-					go func(seqEvent string, seqLen int, key interface{}) {
-						defer innerWg.Done()
-						if onlineresult := fetchDataFunc(seqEvent, seqLen, key); onlineresult != nil {
-							onlineSequences = onlineresult
-						}
-					}(seqConfig.SeqEvent, seqConfig.SeqLen, key)
-					innerWg.Wait()
+
+					if onlineresult := fetchDataFunc(seqConfig.SeqEvent, seqConfig.SeqLen, key); onlineresult != nil {
+						onlineSequences = onlineresult
+					}
 
 					subproperties := makeSequenceFeatures(offlineSequences, onlineSequences, seqConfig, sequenceConfig, currTime)
 					mu.Lock()
