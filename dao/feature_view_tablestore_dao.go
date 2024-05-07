@@ -6,6 +6,7 @@ import (
 	"log"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -138,72 +139,85 @@ func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, us
 	fetchDataFunc := func(seqEvent string, seqLen int, key interface{}, tableName string) []*sequenceInfo {
 		sequences := []*sequenceInfo{}
 
-		getRangeRequest := &tablestore.GetRangeRequest{}
-		rangeRowQueryCriteria := &tablestore.RangeRowQueryCriteria{}
-		rangeRowQueryCriteria.TableName = tableName
+		var ots_mu sync.Mutex
+		var ots_wg sync.WaitGroup
+		events := strings.Split(seqEvent, "|")
 
-		startPK := new(tablestore.PrimaryKey)
-		startPK.AddPrimaryKeyColumn(pkField, fmt.Sprintf("%v_%s", key, seqEvent))
-		startPK.AddPrimaryKeyColumnWithMinValue(skField)
-		endPK := new(tablestore.PrimaryKey)
-		endPK.AddPrimaryKeyColumn(pkField, fmt.Sprintf("%v_%s", key, seqEvent))
-		endPK.AddPrimaryKeyColumnWithMaxValue(skField)
+		for _, event := range events {
+			ots_wg.Add(1)
+			go func(event string) {
+				defer ots_wg.Done()
+				getRangeRequest := &tablestore.GetRangeRequest{}
+				rangeRowQueryCriteria := &tablestore.RangeRowQueryCriteria{}
+				rangeRowQueryCriteria.TableName = tableName
 
-		rangeRowQueryCriteria.StartPrimaryKey = startPK
-		rangeRowQueryCriteria.EndPrimaryKey = endPK
-		rangeRowQueryCriteria.Direction = tablestore.FORWARD
-		rangeRowQueryCriteria.ColumnsToGet = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.PlayTimeField, sequenceConfig.TimestampField}
-		timeRange := new(tablestore.TimeRange)
-		timeRange.End = currTime * 1000
-		timeRange.Start = (currTime - 86400*5) * 1000
-		rangeRowQueryCriteria.TimeRange = timeRange
+				startPK := new(tablestore.PrimaryKey)
+				startPK.AddPrimaryKeyColumn(pkField, fmt.Sprintf("%v_%s", key, event))
+				startPK.AddPrimaryKeyColumnWithMinValue(skField)
+				endPK := new(tablestore.PrimaryKey)
+				endPK.AddPrimaryKeyColumn(pkField, fmt.Sprintf("%v_%s", key, event))
+				endPK.AddPrimaryKeyColumnWithMaxValue(skField)
 
-		getRangeRequest.RangeRowQueryCriteria = rangeRowQueryCriteria
-		getRangeResp, err := d.tablestoreClient.GetRange(getRangeRequest)
+				rangeRowQueryCriteria.StartPrimaryKey = startPK
+				rangeRowQueryCriteria.EndPrimaryKey = endPK
+				rangeRowQueryCriteria.Direction = tablestore.FORWARD
+				rangeRowQueryCriteria.ColumnsToGet = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.PlayTimeField, sequenceConfig.TimestampField}
+				timeRange := new(tablestore.TimeRange)
+				timeRange.End = currTime * 1000
+				timeRange.Start = (currTime - 86400*5) * 1000
+				rangeRowQueryCriteria.TimeRange = timeRange
 
-		for {
-			if err != nil {
-				fmt.Println("get range failed with error:", err)
-			}
-			for _, row := range getRangeResp.Rows {
-				if row.PrimaryKey.PrimaryKeys == nil {
-					continue
-				}
-				seq := new(sequenceInfo)
-				if sequenceConfig.DeduplicationMethodNum == 1 {
-					seq.itemId = utils.ToString(row.PrimaryKey.PrimaryKeys[1].Value, "")
-				}
-				for _, column := range row.Columns {
-					switch column.ColumnName {
-					case sequenceConfig.EventField:
-						seq.event = utils.ToString(column.Value, "")
-					case sequenceConfig.ItemIdField:
-						seq.itemId = utils.ToString(column.Value, "")
-					case sequenceConfig.PlayTimeField:
-						seq.playTime = utils.ToFloat(column.Value, 0)
-					case sequenceConfig.TimestampField:
-						seq.timestamp = utils.ToInt64(column.Value, 0)
+				getRangeRequest.RangeRowQueryCriteria = rangeRowQueryCriteria
+				getRangeResp, err := d.tablestoreClient.GetRange(getRangeRequest)
+
+				for {
+					if err != nil {
+						fmt.Println("get range failed with error:", err)
+					}
+					for _, row := range getRangeResp.Rows {
+						if row.PrimaryKey.PrimaryKeys == nil {
+							continue
+						}
+						seq := new(sequenceInfo)
+						if sequenceConfig.DeduplicationMethodNum == 1 {
+							seq.itemId = utils.ToString(row.PrimaryKey.PrimaryKeys[1].Value, "")
+						}
+						for _, column := range row.Columns {
+							switch column.ColumnName {
+							case sequenceConfig.EventField:
+								seq.event = utils.ToString(column.Value, "")
+							case sequenceConfig.ItemIdField:
+								seq.itemId = utils.ToString(column.Value, "")
+							case sequenceConfig.PlayTimeField:
+								seq.playTime = utils.ToFloat(column.Value, 0)
+							case sequenceConfig.TimestampField:
+								seq.timestamp = utils.ToInt64(column.Value, 0)
+							}
+						}
+
+						if seq.event == "" || seq.itemId == "" {
+							continue
+						}
+						if t, exist := sequencePlayTimeMap[seq.event]; exist {
+							if seq.playTime <= t {
+								continue
+							}
+						}
+
+						ots_mu.Lock()
+						sequences = append(sequences, seq)
+						ots_mu.Unlock()
+					}
+					if getRangeResp.NextStartPrimaryKey == nil {
+						break
+					} else {
+						getRangeRequest.RangeRowQueryCriteria.StartPrimaryKey = getRangeResp.NextStartPrimaryKey
+						getRangeResp, err = d.tablestoreClient.GetRange(getRangeRequest)
 					}
 				}
-
-				if seq.event == "" || seq.itemId == "" {
-					continue
-				}
-				if t, exist := sequencePlayTimeMap[seqEvent]; exist {
-					if seq.playTime <= t {
-						continue
-					}
-				}
-
-				sequences = append(sequences, seq)
-			}
-			if getRangeResp.NextStartPrimaryKey == nil {
-				break
-			} else {
-				getRangeRequest.RangeRowQueryCriteria.StartPrimaryKey = getRangeResp.NextStartPrimaryKey
-				getRangeResp, err = d.tablestoreClient.GetRange(getRangeRequest)
-			}
+			}(event)
 		}
+		ots_wg.Wait()
 
 		// add seqLen limit
 		sort.Slice(sequences, func(i, j int) bool {
