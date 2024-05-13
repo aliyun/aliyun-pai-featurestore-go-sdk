@@ -59,6 +59,12 @@ func WithFeatureDBLogin(username, password string) ClientOption {
 	}
 }
 
+func WithHologresPort(port int) ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.hologresPort = port
+	}
+}
+
 type FeatureStoreClient struct {
 	// loopLoadData flag to invoke loopLoadProjectData  function
 	loopLoadData bool
@@ -83,6 +89,9 @@ type FeatureStoreClient struct {
 
 	// signature to get data from featurestore db
 	signature string
+
+	// hologres port number, default 80
+	hologresPort int
 }
 
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
@@ -90,6 +99,7 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 		projectMap:           make(map[string]*domain.Project, 0),
 		loopLoadData:         true,
 		datasourceInitClient: true,
+		hologresPort:         80,
 	}
 
 	for _, opt := range opts {
@@ -173,7 +183,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 			continue
 		}
 		// get datasource
-		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId)
+		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId, c.hologresPort)
 		if err != nil {
 			c.logError(fmt.Errorf("get datasource error, err=%v", err))
 			continue
@@ -183,7 +193,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		p.OnlineDataSource.Ak = ak
 		p.OnlineDataSource.TestMode = c.testMode
 
-		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId)
+		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId, c.hologresPort)
 		if err != nil {
 			c.logError(fmt.Errorf("get datasource error, err=%v", err))
 			continue
@@ -238,7 +248,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 				}
 				featureView := getFeatureViewResponse.FeatureView
 				if featureView.RegisterDatasourceId > 0 {
-					getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(featureView.RegisterDatasourceId)
+					getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(featureView.RegisterDatasourceId, c.hologresPort)
 					if err != nil {
 						c.logError(fmt.Errorf("get datasource error, err=%v", err))
 						continue
