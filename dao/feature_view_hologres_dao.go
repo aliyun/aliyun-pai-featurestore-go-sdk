@@ -186,6 +186,9 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 				dst = []interface{}{&seq.itemId, &seq.event, &seq.timestamp, &seq.playTime}
 			}
 			if err := rows.Scan(dst...); err == nil {
+				if seq.event == "" || seq.itemId == "" {
+					continue
+				}
 				if t, exist := sequencePlayTimeMap[seq.event]; exist {
 					if seq.playTime <= t {
 						continue
@@ -252,6 +255,9 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 				dst = []interface{}{&seq.itemId, &seq.event, &seq.playTime, &seq.timestamp}
 			}
 			if err := rows.Scan(dst...); err == nil {
+				if seq.event == "" || seq.itemId == "" {
+					continue
+				}
 				if t, exist := sequencePlayTimeMap[seq.event]; exist {
 					if seq.playTime <= t {
 						continue
