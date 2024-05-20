@@ -183,7 +183,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 			if sequenceConfig.PlayTimeField == "" {
 				dst = []interface{}{&seq.itemId, &seq.event, &seq.timestamp}
 			} else {
-				dst = []interface{}{&seq.itemId, &seq.event, &seq.timestamp, &seq.playTime}
+				dst = []interface{}{&seq.itemId, &seq.event, &seq.playTime, &seq.timestamp}
 			}
 			if err := rows.Scan(dst...); err == nil {
 				if seq.event == "" || seq.itemId == "" {
