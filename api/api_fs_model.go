@@ -68,6 +68,48 @@ func (a *FsModelApiService) GetModelByID(modelId string) (GetModelResponse, erro
 			feature.Type = int32(constants.FS_BOOLEAN)
 		case "TIMESTAMP":
 			feature.Type = int32(constants.FS_TIMESTAMP)
+		case "ARRAY<INT32>":
+			feature.Type = int32(constants.FS_ARRAY_INT32)
+		case "ARRAY<INT64>":
+			feature.Type = int32(constants.FS_ARRAY_INT64)
+		case "ARRAY<FLOAT>":
+			feature.Type = int32(constants.FS_ARRAY_FLOAT)
+		case "ARRAY<DOUBLE>":
+			feature.Type = int32(constants.FS_ARRAY_DOUBLE)
+		case "ARRAY<STRING>":
+			feature.Type = int32(constants.FS_ARRAY_STRING)
+		case "ARRAY<ARRAY<FLOAT>>":
+			feature.Type = int32(constants.FS_ARRAY_ARRAY_FLOAT)
+		case "MAP<INT32,INT32>":
+			feature.Type = int32(constants.FS_MAP_INT32_INT32)
+		case "MAP<INT32,INT64>":
+			feature.Type = int32(constants.FS_MAP_INT32_INT64)
+		case "MAP<INT32,FLOAT>":
+			feature.Type = int32(constants.FS_MAP_INT32_FLOAT)
+		case "MAP<INT32,DOUBLE>":
+			feature.Type = int32(constants.FS_MAP_INT32_DOUBLE)
+		case "MAP<INT32,STRING>":
+			feature.Type = int32(constants.FS_MAP_INT32_STRING)
+		case "MAP<INT64,INT32>":
+			feature.Type = int32(constants.FS_MAP_INT64_INT32)
+		case "MAP<INT64,INT64>":
+			feature.Type = int32(constants.FS_MAP_INT64_INT64)
+		case "MAP<INT64,FLOAT>":
+			feature.Type = int32(constants.FS_MAP_INT64_FLOAT)
+		case "MAP<INT64,DOUBLE>":
+			feature.Type = int32(constants.FS_MAP_INT64_DOUBLE)
+		case "MAP<INT64,STRING>":
+			feature.Type = int32(constants.FS_MAP_INT64_STRING)
+		case "MAP<STRING,INT32>":
+			feature.Type = int32(constants.FS_MAP_STRING_INT32)
+		case "MAP<STRING,INT64>":
+			feature.Type = int32(constants.FS_MAP_STRING_INT64)
+		case "MAP<STRING,FLOAT>":
+			feature.Type = int32(constants.FS_MAP_STRING_FLOAT)
+		case "MAP<STRING,DOUBLE>":
+			feature.Type = int32(constants.FS_MAP_STRING_DOUBLE)
+		case "MAP<STRING,STRING>":
+			feature.Type = int32(constants.FS_MAP_STRING_STRING)
 		default:
 			feature.Type = int32(constants.FS_STRING)
 		}
