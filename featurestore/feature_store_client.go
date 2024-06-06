@@ -107,11 +107,12 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 	}
 
 	cfg := api.NewConfiguration(regionId, accessKeyId, accessKeySecret, projectName)
-	if client.domain != "" {
-		cfg.SetDomain(client.domain)
-	}
+
 	if client.testMode {
 		cfg.SetDomain(fmt.Sprintf("paifeaturestore.%s.aliyuncs.com", regionId))
+	}
+	if client.domain != "" {
+		cfg.SetDomain(client.domain)
 	}
 
 	apiClient, err := api.NewAPIClient(cfg)
