@@ -74,6 +74,10 @@ func NewAPIClient(cfg *Configuration) (*APIClient, error) {
 		Endpoint:        &endpoint,
 	}
 
+	if cfg.Token != "" {
+		config.SecurityToken = &cfg.Token
+	}
+
 	client, err := paifeaturestore.NewClient(config)
 	if err != nil {
 		return nil, err

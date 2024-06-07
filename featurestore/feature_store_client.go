@@ -65,6 +65,12 @@ func WithHologresPort(port int) ClientOption {
 	}
 }
 
+func WithToken(token string) ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.token = token
+	}
+}
+
 type FeatureStoreClient struct {
 	// loopLoadData flag to invoke loopLoadProjectData  function
 	loopLoadData bool
@@ -92,6 +98,9 @@ type FeatureStoreClient struct {
 
 	// hologres port number, default 80
 	hologresPort int
+
+	// sts token
+	token string
 }
 
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
@@ -106,7 +115,7 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 		opt(&client)
 	}
 
-	cfg := api.NewConfiguration(regionId, accessKeyId, accessKeySecret, projectName)
+	cfg := api.NewConfiguration(regionId, accessKeyId, accessKeySecret, client.token, projectName)
 
 	if client.testMode {
 		cfg.SetDomain(fmt.Sprintf("paifeaturestore.%s.aliyuncs.com", regionId))
