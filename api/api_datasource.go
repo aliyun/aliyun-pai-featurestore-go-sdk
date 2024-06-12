@@ -18,7 +18,7 @@ DatasourceApiService Get datasource By datasource_id
 
 @return GetDatasourceResponse
 */
-func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int, hologresPort int) (GetDatasourceResponse, error) {
+func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int, hologresPort int, hologresPublicAddress string) (GetDatasourceResponse, error) {
 
 	var (
 		localVarReturnValue GetDatasourceResponse
@@ -43,7 +43,11 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int, holog
 		uris := strings.Split(*response.Body.Uri, "/")
 		datasource.Database = uris[1]
 		datasource.VpcAddress = fmt.Sprintf("%s-%s-vpc-st.hologres.aliyuncs.com:%d", uris[0], a.client.cfg.regionId, hologresPort)
-		datasource.PublicAddress = fmt.Sprintf("%s-%s.hologres.aliyuncs.com:%d", uris[0], a.client.cfg.regionId, hologresPort)
+		if hologresPublicAddress != "" {
+			datasource.PublicAddress = hologresPublicAddress
+		} else {
+			datasource.PublicAddress = fmt.Sprintf("%s-%s.hologres.aliyuncs.com:%d", uris[0], a.client.cfg.regionId, hologresPort)
+		}
 		//datasource.VpcAddress = fmt.Sprintf("%s-%s.hologres.aliyuncs.com:80", uris[0], a.client.cfg.regionId)
 	case "GraphCompute":
 		datasource.Type = constants.Datasource_Type_IGraph

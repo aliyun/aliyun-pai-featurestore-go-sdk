@@ -59,9 +59,21 @@ func WithFeatureDBLogin(username, password string) ClientOption {
 	}
 }
 
+func WithHologresPublicAddress(hologresPublicAddress string) ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.hologresPublicAddress = hologresPublicAddress
+	}
+}
+
 func WithHologresPort(port int) ClientOption {
 	return func(e *FeatureStoreClient) {
 		e.hologresPort = port
+	}
+}
+
+func WithToken(token string) ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.token = token
 	}
 }
 
@@ -90,8 +102,14 @@ type FeatureStoreClient struct {
 	// signature to get data from featurestore db
 	signature string
 
+	// custom hologres public address (including port num)
+	hologresPublicAddress string
+
 	// hologres port number, default 80
 	hologresPort int
+
+	// sts token
+	token string
 }
 
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
@@ -106,12 +124,13 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 		opt(&client)
 	}
 
-	cfg := api.NewConfiguration(regionId, accessKeyId, accessKeySecret, projectName)
-	if client.domain != "" {
-		cfg.SetDomain(client.domain)
-	}
+	cfg := api.NewConfiguration(regionId, accessKeyId, accessKeySecret, client.token, projectName)
+
 	if client.testMode {
 		cfg.SetDomain(fmt.Sprintf("paifeaturestore.%s.aliyuncs.com", regionId))
+	}
+	if client.domain != "" {
+		cfg.SetDomain(client.domain)
 	}
 
 	apiClient, err := api.NewAPIClient(cfg)
@@ -183,7 +202,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 			continue
 		}
 		// get datasource
-		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId, c.hologresPort)
+		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId, c.hologresPort, c.hologresPublicAddress)
 		if err != nil {
 			c.logError(fmt.Errorf("get datasource error, err=%v", err))
 			continue
@@ -193,7 +212,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		p.OnlineDataSource.Ak = ak
 		p.OnlineDataSource.TestMode = c.testMode
 
-		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId, c.hologresPort)
+		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId, c.hologresPort, c.hologresPublicAddress)
 		if err != nil {
 			c.logError(fmt.Errorf("get datasource error, err=%v", err))
 			continue
@@ -248,7 +267,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 				}
 				featureView := getFeatureViewResponse.FeatureView
 				if featureView.RegisterDatasourceId > 0 {
-					getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(featureView.RegisterDatasourceId, c.hologresPort)
+					getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(featureView.RegisterDatasourceId, c.hologresPort, c.hologresPublicAddress)
 					if err != nil {
 						c.logError(fmt.Errorf("get datasource error, err=%v", err))
 						continue
