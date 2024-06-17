@@ -189,6 +189,9 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		AccesskeyId:     c.client.GetConfig().AccessKeyId,
 		AccesskeySecret: c.client.GetConfig().AccessKeySecret,
 	}
+	if c.client.GetConfig().Token != "" {
+		ak.SecurityToken = c.client.GetConfig().Token
+	}
 	projectData := make(map[string]*domain.Project, 0)
 
 	listProjectsResponse, err := c.client.FsProjectApi.ListProjects()
