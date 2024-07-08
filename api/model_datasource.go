@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-tablestore-go-sdk/tablestore"
@@ -30,11 +31,21 @@ type Datasource struct {
 func (d *Datasource) GenerateDSN(datasourceType string) (DSN string) {
 	if datasourceType == constants.Datasource_Type_Hologres {
 		if d.TestMode {
-			DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
-				d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.PublicAddress, d.Database)
+			if d.Ak.SecurityToken != "" {
+				DSN = fmt.Sprintf("postgres://paifsslr$%s:%s@%s/%s?sslmode=disable&connect_timeout=10&options=sts_token=%s",
+					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.PublicAddress, d.Database, url.QueryEscape(d.Token))
+			} else {
+				DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
+					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.PublicAddress, d.Database)
+			}
 		} else {
-			DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
-				d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.VpcAddress, d.Database)
+			if d.Ak.SecurityToken != "" {
+				DSN = fmt.Sprintf("postgres://paifsslr$%s:%s@%s/%s?sslmode=disable&connect_timeout=10&options=sts_token=%s",
+					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.PublicAddress, d.Database, url.QueryEscape(d.Token))
+			} else {
+				DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
+					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.VpcAddress, d.Database)
+			}
 		}
 	}
 	return
@@ -42,9 +53,17 @@ func (d *Datasource) GenerateDSN(datasourceType string) (DSN string) {
 
 func (d *Datasource) NewTableStoreClient() (client *tablestore.TableStoreClient) {
 	if d.TestMode {
-		client = tablestore.NewClient(d.PublicAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret)
+		if d.Ak.SecurityToken != "" {
+			client = tablestore.NewClientWithConfig(d.PublicAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.Ak.SecurityToken, nil)
+		} else {
+			client = tablestore.NewClient(d.PublicAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret)
+		}
 	} else {
-		client = tablestore.NewClient(d.VpcAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret)
+		if d.Ak.SecurityToken != "" {
+			client = tablestore.NewClientWithConfig(d.VpcAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.Ak.SecurityToken, nil)
+		} else {
+			client = tablestore.NewClient(d.VpcAddress, d.RdsInstanceId, d.Ak.AccesskeyId, d.Ak.AccesskeySecret)
+		}
 	}
 	return
 }
