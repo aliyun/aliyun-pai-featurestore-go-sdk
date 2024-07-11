@@ -161,7 +161,11 @@ func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, us
 				rangeRowQueryCriteria.StartPrimaryKey = startPK
 				rangeRowQueryCriteria.EndPrimaryKey = endPK
 				rangeRowQueryCriteria.Direction = tablestore.FORWARD
-				rangeRowQueryCriteria.ColumnsToGet = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.PlayTimeField, sequenceConfig.TimestampField}
+				if sequenceConfig.PlayTimeField == "" {
+					rangeRowQueryCriteria.ColumnsToGet = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.TimestampField}
+				} else {
+					rangeRowQueryCriteria.ColumnsToGet = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.PlayTimeField, sequenceConfig.TimestampField}
+				}
 				timeRange := new(tablestore.TimeRange)
 				timeRange.End = currTime * 1000
 				timeRange.Start = (currTime - 86400*5) * 1000
