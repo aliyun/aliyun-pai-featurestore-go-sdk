@@ -267,6 +267,7 @@ func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, us
 				} else {
 					rangeRowQueryCriteria.ColumnsToGet = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.PlayTimeField, sequenceConfig.TimestampField}
 				}
+				rangeRowQueryCriteria.MaxVersion = 1
 
 				getRangeRequest.RangeRowQueryCriteria = rangeRowQueryCriteria
 				getRangeResp, err := d.tablestoreClient.GetRange(getRangeRequest)
