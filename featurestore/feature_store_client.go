@@ -144,7 +144,9 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 		return nil, err
 	}
 
-	client.LoadProjectData()
+	if err := client.LoadProjectData(); err != nil {
+		return nil, err
+	}
 
 	if client.loopLoadData {
 		go client.loopLoadProjectData()
@@ -184,7 +186,7 @@ func (c *FeatureStoreClient) logError(err error) {
 }
 
 // LoadProjectData specifies a function to load data from featurestore server
-func (c *FeatureStoreClient) LoadProjectData() {
+func (c *FeatureStoreClient) LoadProjectData() error {
 	ak := api.Ak{
 		AccesskeyId:     c.client.GetConfig().AccessKeyId,
 		AccesskeySecret: c.client.GetConfig().AccessKeySecret,
@@ -197,7 +199,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 	listProjectsResponse, err := c.client.FsProjectApi.ListProjects()
 	if err != nil {
 		c.logError(fmt.Errorf("list projects error, err=%v", err))
-		return
+		return err
 	}
 
 	for _, p := range listProjectsResponse.Projects {
@@ -208,7 +210,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId, c.hologresPort, c.hologresPublicAddress)
 		if err != nil {
 			c.logError(fmt.Errorf("get datasource error, err=%v", err))
-			continue
+			return err
 		}
 
 		p.OnlineDataSource = getDataSourceResponse.Datasource
@@ -218,7 +220,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId, c.hologresPort, c.hologresPublicAddress)
 		if err != nil {
 			c.logError(fmt.Errorf("get datasource error, err=%v", err))
-			continue
+			return err
 		}
 
 		p.OfflineDataSource = getDataSourceResponse.Datasource
@@ -229,7 +231,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		p.FeatureDBAddress, p.FeatureDBToken, err = c.client.DatasourceApi.GetFeatureDBDatasourceInfo(c.testMode, p.OfflineDataSource.WorkspaceId)
 		if err != nil {
 			c.logError(fmt.Errorf("get featuredb datasource, err=%v", err))
-			return
+			return err
 		}
 
 		p.Signature = c.signature
@@ -241,7 +243,7 @@ func (c *FeatureStoreClient) LoadProjectData() {
 		listFeatureEntitiesResponse, err := c.client.FeatureEntityApi.ListFeatureEntities(strconv.Itoa(p.ProjectId))
 		if err != nil {
 			c.logError(fmt.Errorf("list feature entities error, err=%v", err))
-			continue
+			return err
 		}
 
 		for _, entity := range listFeatureEntitiesResponse.FeatureEntities {
@@ -259,14 +261,14 @@ func (c *FeatureStoreClient) LoadProjectData() {
 			listFeatureViews, err := c.client.FeatureViewApi.ListFeatureViews(int32(pagesize), int32(pagenumber), strconv.Itoa(p.ProjectId))
 			if err != nil {
 				c.logError(fmt.Errorf("list feature views error, err=%v", err))
-				continue
+				return err
 			}
 
 			for _, view := range listFeatureViews.FeatureViews {
 				getFeatureViewResponse, err := c.client.FeatureViewApi.GetFeatureViewByID(strconv.Itoa(int(view.FeatureViewId)))
 				if err != nil {
 					c.logError(fmt.Errorf("get feature view error, err=%v", err))
-					continue
+					return err
 				}
 				featureView := getFeatureViewResponse.FeatureView
 				if featureView.RegisterDatasourceId > 0 {
@@ -297,14 +299,14 @@ func (c *FeatureStoreClient) LoadProjectData() {
 			listModelsResponse, err := c.client.FsModelApi.ListModels(pagesize, pagenumber, strconv.Itoa(project.ProjectId))
 			if err != nil {
 				c.logError(fmt.Errorf("list models error, err=%v", err))
-				continue
+				return err
 			}
 
 			for _, m := range listModelsResponse.Models {
 				getModelResponse, err := c.client.FsModelApi.GetModelByID(strconv.Itoa(m.ModelId))
 				if err != nil {
 					c.logError(fmt.Errorf("get model error, err=%v", err))
-					continue
+					return err
 				}
 				model := getModelResponse.Model
 				modelDomain := domain.NewModel(model, project)
@@ -325,6 +327,8 @@ func (c *FeatureStoreClient) LoadProjectData() {
 	if len(projectData) > 0 {
 		c.projectMap = projectData
 	}
+
+	return nil
 }
 
 func (c *FeatureStoreClient) loopLoadProjectData() {
