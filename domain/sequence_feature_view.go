@@ -68,24 +68,32 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 		PrimaryKeyField: sequenceFeatureView.userIdField,
 	}
 
-	switch p.OnlineDatasourceType {
-	case constants.Datasource_Type_Hologres:
-		daoConfig.HologresName = p.OnlineStore.GetDatasourceName()
-		daoConfig.HologresOfflineTableName = p.OnlineStore.GetSeqOfflineTableName(sequenceFeatureView)
-		daoConfig.HologresOnlineTableName = p.OnlineStore.GetSeqOnlineTableName(sequenceFeatureView)
-	case constants.Datasource_Type_TableStore:
-		daoConfig.TableStoreName = p.OnlineStore.GetDatasourceName()
-		daoConfig.TableStoreOfflineTableName = p.OnlineStore.GetSeqOfflineTableName(sequenceFeatureView)
-		daoConfig.TableStoreOnlineTableName = p.OnlineStore.GetSeqOnlineTableName(sequenceFeatureView)
+	if view.WriteToFeatureDB || p.OnlineDatasourceType == constants.Datasource_Type_FeatureDB {
+		daoConfig.DatasourceType = constants.Datasource_Type_FeatureDB
+		daoConfig.FeatureDBDatabaseName = p.InstanceId
+		daoConfig.FeatureDBSchemaName = p.ProjectName
+		daoConfig.FeatureDBTableName = sequenceFeatureView.Name
+		daoConfig.FeatureDBSignature = p.Signature
+	} else {
+		switch p.OnlineDatasourceType {
+		case constants.Datasource_Type_Hologres:
+			daoConfig.HologresName = p.OnlineStore.GetDatasourceName()
+			daoConfig.HologresOfflineTableName = p.OnlineStore.GetSeqOfflineTableName(sequenceFeatureView)
+			daoConfig.HologresOnlineTableName = p.OnlineStore.GetSeqOnlineTableName(sequenceFeatureView)
+		case constants.Datasource_Type_TableStore:
+			daoConfig.TableStoreName = p.OnlineStore.GetDatasourceName()
+			daoConfig.TableStoreOfflineTableName = p.OnlineStore.GetSeqOfflineTableName(sequenceFeatureView)
+			daoConfig.TableStoreOnlineTableName = p.OnlineStore.GetSeqOnlineTableName(sequenceFeatureView)
 
-	case constants.Datasource_Type_IGraph:
-		daoConfig.SaveOriginalField = true
-		daoConfig.IGraphName = p.OnlineStore.GetDatasourceName()
-		daoConfig.GroupName = p.ProjectName
-		daoConfig.IgraphEdgeName = p.OnlineStore.GetSeqOnlineTableName(sequenceFeatureView)
+		case constants.Datasource_Type_IGraph:
+			daoConfig.SaveOriginalField = true
+			daoConfig.IGraphName = p.OnlineStore.GetDatasourceName()
+			daoConfig.GroupName = p.ProjectName
+			daoConfig.IgraphEdgeName = p.OnlineStore.GetSeqOnlineTableName(sequenceFeatureView)
 
-	default:
+		default:
 
+		}
 	}
 
 	featureViewDao := dao.NewFeatureViewDao(daoConfig)

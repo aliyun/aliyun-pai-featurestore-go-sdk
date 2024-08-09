@@ -41,7 +41,7 @@ func (d *Datasource) GenerateDSN(datasourceType string) (DSN string) {
 		} else {
 			if d.Ak.SecurityToken != "" {
 				DSN = fmt.Sprintf("postgres://paifsslr$%s:%s@%s/%s?sslmode=disable&connect_timeout=10&options=sts_token=%s",
-					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.PublicAddress, d.Database, url.QueryEscape(d.Ak.SecurityToken))
+					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.VpcAddress, d.Database, url.QueryEscape(d.Ak.SecurityToken))
 			} else {
 				DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
 					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.VpcAddress, d.Database)

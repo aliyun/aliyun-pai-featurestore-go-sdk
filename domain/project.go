@@ -70,7 +70,7 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 		panic("not support onlinestore type")
 	}
 
-	if isInitClient && p.FeatureDBAddress != "" && p.FeatureDBToken != "" {
+	if p.FeatureDBAddress != "" && p.FeatureDBToken != "" {
 		featuredb.InitFeatureDBClient(p.FeatureDBAddress, p.FeatureDBToken)
 	}
 
