@@ -12,12 +12,18 @@ go get github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2
 - 初始化 client
 
 ```go
+import (
+	"os"
+
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/featurestore"
+)
+
 accessId := os.Getenv("AccessId")
 accessKey := os.Getenv("AccessKey")
 regionId := "cn-hangzhou"
 projectName := "fs_test_ots"
 
-client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName)
+client, err := featurestore.NewFeatureStoreClient(regionId, accessId, accessKey, projectName)
 ```
 
 如果需要从 FeatureStore 在线存储 FeatureDB 中读取数据，初始化 client 需要填写开通 FeatureDB 时设置的用户名和密码（工作空间管理员可在控制台 数据源 页面进行修改）：
@@ -25,7 +31,7 @@ client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName)
 ```go
 username := os.Getenv("FeatureDBUsername")
 password := os.Getenv("FeatureDBPassword")
-client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName, WithFeatureDBLogin(username, password))
+client, err := featurestore.NewFeatureStoreClient(regionId, accessId, accessKey, projectName, featurestore.WithFeatureDBLogin(username, password))
 ```
 
 由于 SDK 是直连 onlinestore 的， client 需要在 VPC 环境运行。 比如 hologres/graphcompute , 需要在指定的 VPC 才能连接。
@@ -33,7 +39,7 @@ client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName,
 如果需要在本地非 VPC 环境下进行测试，初始化 client 需要加上 WithTestMode()，此时连接 FeatureStore 和 onlinestore 均会使用公网地址。
 
 ```go
-client, err := NewFeatureStoreClient(regionId, accessId, accessKey, projectName, WithTestMode())
+client, err := featurestore.NewFeatureStoreClient(regionId, accessId, accessKey, projectName, featurestore.WithTestMode())
 ```
 
  **注意：** 当使用 WithTestMode() 初始化 client 时，需要确认在线数据源是否已开启公网。通过公网访问onlinestore会有对应数据源的流量开销，可能会产生下行流量费用。因此建议在此模式下只进行测试，生产环境请勿添加 WithTestMode()。
