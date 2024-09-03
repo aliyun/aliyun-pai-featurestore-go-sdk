@@ -24,6 +24,16 @@ const (
 	FeatureDB_IfNull_Flag_Version_1 = byte('1')
 )
 
+var readerPool sync.Pool
+
+func init() {
+	readerPool = sync.Pool{
+		New: func() interface{} {
+			return bytes.NewReader(nil)
+		},
+	}
+}
+
 type FeatureViewFeatureDBDao struct {
 	featureDBClient *http.Client
 	database        string
@@ -92,8 +102,11 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				pkeys = append(pkeys, utils.ToString(k, ""))
 			}
 			body, _ := json.Marshal(map[string]any{"keys": pkeys})
+			requestBody := readerPool.Get().(*bytes.Reader)
+			defer readerPool.Put(requestBody)
+			requestBody.Reset(body)
 			req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=",
-				d.address, d.database, d.schema, d.table, len(pkeys)), bytes.NewReader(body))
+				d.address, d.database, d.schema, d.table, len(pkeys)), requestBody)
 			if err != nil {
 				log.Println(err)
 				return
@@ -128,7 +141,8 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 			reader := bufio.NewReader(response.Body)
 			keyStartIdx := 0
 			innerResult := make([]map[string]interface{}, 0, len(ks))
-			innerReader := bytes.NewReader(nil)
+			innerReader := readerPool.Get().(*bytes.Reader)
+			defer readerPool.Put(innerReader)
 			for {
 				buf, err := deserialize(reader)
 				if err == io.EOF {
