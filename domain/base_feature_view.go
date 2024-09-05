@@ -203,3 +203,13 @@ func (f *BaseFeatureView) GetType() string {
 func (f *BaseFeatureView) Offline2Online(input string) string {
 	return input
 }
+
+func (f *BaseFeatureView) GetFields() []api.FeatureViewFields {
+	fields := make([]api.FeatureViewFields, len(f.Fields))
+	for i, field := range f.Fields {
+		if field != nil {
+			fields[i] = *field
+		}
+	}
+	return fields
+}
