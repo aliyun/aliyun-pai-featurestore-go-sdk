@@ -58,7 +58,7 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 			if field.IsPartition {
 				continue
 			} else {
-				fieldTypeMap[field.Name] = constants.FSType(field.Type)
+				fieldTypeMap[field.Name] = field.Type
 			}
 		}
 		daoConfig.FieldTypeMap = fieldTypeMap
@@ -87,7 +87,7 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 			for _, field := range view.Fields {
 				if field.IsPrimaryKey {
 					fieldMap[field.Name] = field.Name
-					fieldTypeMap[field.Name] = constants.FSType(field.Type)
+					fieldTypeMap[field.Name] = field.Type
 				} else if field.IsPartition {
 					continue
 				} else {
@@ -99,7 +99,7 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 					}
 
 					fieldMap[name] = field.Name
-					fieldTypeMap[name] = constants.FSType(field.Type)
+					fieldTypeMap[name] = field.Type
 				}
 			}
 			daoConfig.FieldMap = fieldMap
@@ -110,11 +110,11 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 			fieldTypeMap := make(map[string]constants.FSType, len(view.Fields))
 			for _, field := range view.Fields {
 				if field.IsPrimaryKey {
-					fieldTypeMap[field.Name] = constants.FSType(field.Type)
+					fieldTypeMap[field.Name] = field.Type
 				} else if field.IsPartition {
 					continue
 				} else {
-					fieldTypeMap[field.Name] = constants.FSType(field.Type)
+					fieldTypeMap[field.Name] = field.Type
 				}
 			}
 			daoConfig.FieldTypeMap = fieldTypeMap
