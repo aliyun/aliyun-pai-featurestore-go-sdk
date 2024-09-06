@@ -76,61 +76,61 @@ func (a *FeatureViewApiService) GetFeatureViewByID(featureViewId string) (GetFea
 
 		switch *fieldItem.Type {
 		case "INT32":
-			field.Type = int32(constants.FS_INT32)
+			field.Type = constants.FS_INT32
 		case "INT64":
-			field.Type = int32(constants.FS_INT64)
+			field.Type = constants.FS_INT64
 		case "FLOAT":
-			field.Type = int32(constants.FS_FLOAT)
+			field.Type = constants.FS_FLOAT
 		case "DOUBLE":
-			field.Type = int32(constants.FS_DOUBLE)
+			field.Type = constants.FS_DOUBLE
 		case "BOOLEAN":
-			field.Type = int32(constants.FS_BOOLEAN)
+			field.Type = constants.FS_BOOLEAN
 		case "TIMESTAMP":
-			field.Type = int32(constants.FS_TIMESTAMP)
+			field.Type = constants.FS_TIMESTAMP
 		case "ARRAY<INT32>":
-			field.Type = int32(constants.FS_ARRAY_INT32)
+			field.Type = constants.FS_ARRAY_INT32
 		case "ARRAY<INT64>":
-			field.Type = int32(constants.FS_ARRAY_INT64)
+			field.Type = constants.FS_ARRAY_INT64
 		case "ARRAY<FLOAT>":
-			field.Type = int32(constants.FS_ARRAY_FLOAT)
+			field.Type = constants.FS_ARRAY_FLOAT
 		case "ARRAY<DOUBLE>":
-			field.Type = int32(constants.FS_ARRAY_DOUBLE)
+			field.Type = constants.FS_ARRAY_DOUBLE
 		case "ARRAY<STRING>":
-			field.Type = int32(constants.FS_ARRAY_STRING)
+			field.Type = constants.FS_ARRAY_STRING
 		case "ARRAY<ARRAY<FLOAT>>":
-			field.Type = int32(constants.FS_ARRAY_ARRAY_FLOAT)
+			field.Type = constants.FS_ARRAY_ARRAY_FLOAT
 		case "MAP<INT32,INT32>":
-			field.Type = int32(constants.FS_MAP_INT32_INT32)
+			field.Type = constants.FS_MAP_INT32_INT32
 		case "MAP<INT32,INT64>":
-			field.Type = int32(constants.FS_MAP_INT32_INT64)
+			field.Type = constants.FS_MAP_INT32_INT64
 		case "MAP<INT32,FLOAT>":
-			field.Type = int32(constants.FS_MAP_INT32_FLOAT)
+			field.Type = constants.FS_MAP_INT32_FLOAT
 		case "MAP<INT32,DOUBLE>":
-			field.Type = int32(constants.FS_MAP_INT32_DOUBLE)
+			field.Type = constants.FS_MAP_INT32_DOUBLE
 		case "MAP<INT32,STRING>":
-			field.Type = int32(constants.FS_MAP_INT32_STRING)
+			field.Type = constants.FS_MAP_INT32_STRING
 		case "MAP<INT64,INT32>":
-			field.Type = int32(constants.FS_MAP_INT64_INT32)
+			field.Type = constants.FS_MAP_INT64_INT32
 		case "MAP<INT64,INT64>":
-			field.Type = int32(constants.FS_MAP_INT64_INT64)
+			field.Type = constants.FS_MAP_INT64_INT64
 		case "MAP<INT64,FLOAT>":
-			field.Type = int32(constants.FS_MAP_INT64_FLOAT)
+			field.Type = constants.FS_MAP_INT64_FLOAT
 		case "MAP<INT64,DOUBLE>":
-			field.Type = int32(constants.FS_MAP_INT64_DOUBLE)
+			field.Type = constants.FS_MAP_INT64_DOUBLE
 		case "MAP<INT64,STRING>":
-			field.Type = int32(constants.FS_MAP_INT64_STRING)
+			field.Type = constants.FS_MAP_INT64_STRING
 		case "MAP<STRING,INT32>":
-			field.Type = int32(constants.FS_MAP_STRING_INT32)
+			field.Type = constants.FS_MAP_STRING_INT32
 		case "MAP<STRING,INT64>":
-			field.Type = int32(constants.FS_MAP_STRING_INT64)
+			field.Type = constants.FS_MAP_STRING_INT64
 		case "MAP<STRING,FLOAT>":
-			field.Type = int32(constants.FS_MAP_STRING_FLOAT)
+			field.Type = constants.FS_MAP_STRING_FLOAT
 		case "MAP<STRING,DOUBLE>":
-			field.Type = int32(constants.FS_MAP_STRING_DOUBLE)
+			field.Type = constants.FS_MAP_STRING_DOUBLE
 		case "MAP<STRING,STRING>":
-			field.Type = int32(constants.FS_MAP_STRING_STRING)
+			field.Type = constants.FS_MAP_STRING_STRING
 		default:
-			field.Type = int32(constants.FS_STRING)
+			field.Type = constants.FS_STRING
 		}
 
 		for _, attr := range fieldItem.Attributes {

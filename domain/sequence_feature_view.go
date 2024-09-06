@@ -152,3 +152,13 @@ func (f *SequenceFeatureView) GetType() string {
 func (f *SequenceFeatureView) Offline2Online(input string) string {
 	return f.offline_2_online_seq_map[input]
 }
+
+func (f *SequenceFeatureView) GetFields() []api.FeatureViewFields {
+	fields := make([]api.FeatureViewFields, len(f.Fields))
+	for i, field := range f.Fields {
+		if field != nil {
+			fields[i] = *field
+		}
+	}
+	return fields
+}
