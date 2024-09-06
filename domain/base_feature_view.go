@@ -213,3 +213,7 @@ func (f *BaseFeatureView) GetFields() []api.FeatureViewFields {
 	}
 	return fields
 }
+
+func (f *BaseFeatureView) GetIsWriteToFeatureDB() bool {
+	return f.WriteToFeatureDB || f.Project.OnlineDatasourceType == constants.Datasource_Type_FeatureDB
+}

@@ -12,6 +12,7 @@ type FeatureView interface {
 	GetType() string
 	Offline2Online(input string) string
 	GetFields() []api.FeatureViewFields
+	GetIsWriteToFeatureDB() bool
 }
 
 func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) FeatureView {
