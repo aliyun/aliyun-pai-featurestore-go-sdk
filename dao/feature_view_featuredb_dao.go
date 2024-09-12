@@ -26,6 +26,16 @@ const (
 	FeatureDB_IfNull_Flag_Version_1 = byte('1')
 )
 
+var readerPool sync.Pool
+
+func init() {
+	readerPool = sync.Pool{
+		New: func() interface{} {
+			return bytes.NewReader(nil)
+		},
+	}
+}
+
 type FeatureViewFeatureDBDao struct {
 	featureDBClient *http.Client
 	database        string
@@ -94,8 +104,11 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				pkeys = append(pkeys, utils.ToString(k, ""))
 			}
 			body, _ := json.Marshal(map[string]any{"keys": pkeys})
+			requestBody := readerPool.Get().(*bytes.Reader)
+			defer readerPool.Put(requestBody)
+			requestBody.Reset(body)
 			req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=",
-				d.address, d.database, d.schema, d.table, len(pkeys)), bytes.NewReader(body))
+				d.address, d.database, d.schema, d.table, len(pkeys)), requestBody)
 			if err != nil {
 				errChan <- err
 				return
@@ -130,7 +143,8 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 			reader := bufio.NewReader(response.Body)
 			keyStartIdx := 0
 			innerResult := make([]map[string]interface{}, 0, len(ks))
-			innerReader := bytes.NewReader(nil)
+			innerReader := readerPool.Get().(*bytes.Reader)
+			defer readerPool.Put(innerReader)
 			for {
 				buf, err := deserialize(reader)
 				if err == io.EOF {
@@ -197,6 +211,275 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 									var booleanValue bool
 									binary.Read(innerReader, binary.LittleEndian, &booleanValue)
 									properties[field] = booleanValue
+								case constants.FS_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									strBytes := make([]byte, length)
+									binary.Read(innerReader, binary.LittleEndian, &strBytes)
+									properties[field] = string(strBytes)
+								case constants.FS_ARRAY_INT32:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									arrayInt32Value := make([]int32, length)
+									if length > 0 {
+										binary.Read(innerReader, binary.LittleEndian, &arrayInt32Value)
+									}
+									properties[field] = arrayInt32Value
+								case constants.FS_ARRAY_INT64:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									arrayInt64Value := make([]int64, length)
+									if length > 0 {
+										binary.Read(innerReader, binary.LittleEndian, &arrayInt64Value)
+									}
+									properties[field] = arrayInt64Value
+								case constants.FS_ARRAY_FLOAT:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									arrayFloat32Value := make([]float32, length)
+									if length > 0 {
+										binary.Read(innerReader, binary.LittleEndian, &arrayFloat32Value)
+									}
+									properties[field] = arrayFloat32Value
+								case constants.FS_ARRAY_DOUBLE:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									arrayFloat64Value := make([]float64, length)
+									if length > 0 {
+										binary.Read(innerReader, binary.LittleEndian, &arrayFloat64Value)
+									}
+									properties[field] = arrayFloat64Value
+								case constants.FS_ARRAY_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									arrayStringValue := d.decodeStringArray(innerReader, length)
+									properties[field] = arrayStringValue
+								case constants.FS_ARRAY_ARRAY_FLOAT:
+									var outerLength uint32
+									binary.Read(innerReader, binary.LittleEndian, &outerLength)
+									arrayOfArrayFloatValue := make([][]float32, outerLength)
+									if outerLength > 0 {
+										var totalElements uint32
+										binary.Read(innerReader, binary.LittleEndian, &totalElements)
+										if totalElements == 0 {
+											for outerIdx := range arrayOfArrayFloatValue {
+												arrayOfArrayFloatValue[outerIdx] = []float32{}
+											}
+										} else {
+											innerArrayLens := make([]uint32, outerLength)
+											binary.Read(innerReader, binary.LittleEndian, &innerArrayLens)
+											innerValidElements := make([]float32, totalElements)
+											binary.Read(innerReader, binary.LittleEndian, &innerValidElements)
+											innerIndex := 0
+											for outerIdx, innerLength := range innerArrayLens {
+												arrayOfArrayFloatValue[outerIdx] = innerValidElements[innerIndex : innerIndex+int(innerLength)]
+												innerIndex += int(innerLength)
+											}
+										}
+									}
+									properties[field] = arrayOfArrayFloatValue
+								case constants.FS_MAP_INT32_INT32:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt32Int32Value := make(map[int32]int32, length)
+									if length > 0 {
+										keys := make([]int32, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := make([]int32, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapInt32Int32Value[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt32Int32Value
+								case constants.FS_MAP_INT32_INT64:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt32Int64Value := make(map[int32]int64, length)
+									if length > 0 {
+										keys := make([]int32, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := make([]int64, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapInt32Int64Value[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt32Int64Value
+								case constants.FS_MAP_INT32_FLOAT:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt32FloatValue := make(map[int32]float32, length)
+									if length > 0 {
+										keys := make([]int32, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := make([]float32, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapInt32FloatValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt32FloatValue
+								case constants.FS_MAP_INT32_DOUBLE:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt32DoubleValue := make(map[int32]float64, length)
+									if length > 0 {
+										keys := make([]int32, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := make([]float64, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapInt32DoubleValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt32DoubleValue
+								case constants.FS_MAP_INT32_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt32StringValue := make(map[int32]string, length)
+									if length > 0 {
+										keys := make([]int32, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := d.decodeStringArray(innerReader, length)
+										for idx, key := range keys {
+											mapInt32StringValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt32StringValue
+								case constants.FS_MAP_INT64_INT32:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt64Int32Value := make(map[int64]int32, length)
+									if length > 0 {
+										keys := make([]int64, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := make([]int32, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapInt64Int32Value[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt64Int32Value
+								case constants.FS_MAP_INT64_INT64:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt64Int64Value := make(map[int64]int64, length)
+									if length > 0 {
+										keys := make([]int64, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := make([]int64, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapInt64Int64Value[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt64Int64Value
+								case constants.FS_MAP_INT64_FLOAT:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt64FloatValue := make(map[int64]float32, length)
+									if length > 0 {
+										keys := make([]int64, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := make([]float32, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapInt64FloatValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt64FloatValue
+								case constants.FS_MAP_INT64_DOUBLE:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt64DoubleValue := make(map[int64]float64, length)
+									if length > 0 {
+										keys := make([]int64, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := make([]float64, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapInt64DoubleValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt64DoubleValue
+								case constants.FS_MAP_INT64_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapInt64StringValue := make(map[int64]string, length)
+									if length > 0 {
+										keys := make([]int64, length)
+										binary.Read(innerReader, binary.LittleEndian, &keys)
+										values := d.decodeStringArray(innerReader, length)
+										for idx, key := range keys {
+											mapInt64StringValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapInt64StringValue
+								case constants.FS_MAP_STRING_INT32:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapStringInt32Value := make(map[string]int32, length)
+									if length > 0 {
+										keys := d.decodeStringArray(innerReader, length)
+										values := make([]int32, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapStringInt32Value[key] = values[idx]
+										}
+									}
+									properties[field] = mapStringInt32Value
+								case constants.FS_MAP_STRING_INT64:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapStringInt64Value := make(map[string]int64, length)
+									if length > 0 {
+										keys := d.decodeStringArray(innerReader, length)
+										values := make([]int64, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapStringInt64Value[key] = values[idx]
+										}
+									}
+									properties[field] = mapStringInt64Value
+								case constants.FS_MAP_STRING_FLOAT:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapStringFloatValue := make(map[string]float32, length)
+									if length > 0 {
+										keys := d.decodeStringArray(innerReader, length)
+										values := make([]float32, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapStringFloatValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapStringFloatValue
+								case constants.FS_MAP_STRING_DOUBLE:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapStringDoubleValue := make(map[string]float64, length)
+									if length > 0 {
+										keys := d.decodeStringArray(innerReader, length)
+										values := make([]float64, length)
+										binary.Read(innerReader, binary.LittleEndian, &values)
+										for idx, key := range keys {
+											mapStringDoubleValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapStringDoubleValue
+								case constants.FS_MAP_STRING_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									mapStringStringValue := make(map[string]string, length)
+									if length > 0 {
+										keys := d.decodeStringArray(innerReader, length)
+										values := d.decodeStringArray(innerReader, length)
+										for idx, key := range keys {
+											mapStringStringValue[key] = values[idx]
+										}
+									}
+									properties[field] = mapStringStringValue
 								default:
 									var length uint32
 									binary.Read(innerReader, binary.LittleEndian, &length)
@@ -205,7 +488,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 									properties[field] = string(strBytes)
 								}
 							} else {
-								var skipBytes int
+								var skipBytes int = 0
 								switch d.fieldTypeMap[field] {
 								case constants.FS_DOUBLE:
 									skipBytes = 8
@@ -217,15 +500,114 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 									skipBytes = 4
 								case constants.FS_BOOLEAN:
 									skipBytes = 1
+								case constants.FS_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length)
+								case constants.FS_ARRAY_INT32:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * 4
+								case constants.FS_ARRAY_INT64:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * 8
+								case constants.FS_ARRAY_FLOAT:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * 4
+								case constants.FS_ARRAY_DOUBLE:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * 8
+								case constants.FS_ARRAY_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = d.getStringArrayCharLen(innerReader, length)
+								case constants.FS_ARRAY_ARRAY_FLOAT:
+									var outerLength uint32
+									binary.Read(innerReader, binary.LittleEndian, &outerLength)
+									if outerLength > 0 {
+										var totalElements uint32
+										binary.Read(innerReader, binary.LittleEndian, &totalElements)
+										if totalElements > 0 {
+											skipBytes = int(outerLength)*4 + int(totalElements)*4
+										}
+									}
+								case constants.FS_MAP_INT32_INT32:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * (4 + 4)
+								case constants.FS_MAP_INT32_INT64:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * (4 + 8)
+								case constants.FS_MAP_INT32_FLOAT:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * (4 + 4)
+								case constants.FS_MAP_INT32_DOUBLE:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * (4 + 8)
+								case constants.FS_MAP_INT32_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									innerReader.Seek(int64(length*4), io.SeekCurrent)
+									skipBytes = d.getStringArrayCharLen(innerReader, length)
+								case constants.FS_MAP_INT64_INT32:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * (8 + 4)
+								case constants.FS_MAP_INT64_INT64:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * (8 + 8)
+								case constants.FS_MAP_INT64_FLOAT:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * (8 + 4)
+								case constants.FS_MAP_INT64_DOUBLE:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = int(length) * (8 + 8)
+								case constants.FS_MAP_INT64_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									innerReader.Seek(int64(length*8), io.SeekCurrent)
+									skipBytes = d.getStringArrayCharLen(innerReader, length)
+								case constants.FS_MAP_STRING_INT32:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = d.getStringArrayCharLen(innerReader, length) + int(length)*4
+								case constants.FS_MAP_STRING_INT64:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = d.getStringArrayCharLen(innerReader, length) + int(length)*8
+								case constants.FS_MAP_STRING_FLOAT:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = d.getStringArrayCharLen(innerReader, length) + int(length)*4
+								case constants.FS_MAP_STRING_DOUBLE:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									skipBytes = d.getStringArrayCharLen(innerReader, length) + int(length)*8
+								case constants.FS_MAP_STRING_STRING:
+									var length uint32
+									binary.Read(innerReader, binary.LittleEndian, &length)
+									keyLen := d.getStringArrayCharLen(innerReader, length)
+									innerReader.Seek(int64(keyLen), io.SeekCurrent)
+									skipBytes = d.getStringArrayCharLen(innerReader, length)
 								default:
 									var length uint32
 									binary.Read(innerReader, binary.LittleEndian, &length)
 									skipBytes = int(length)
 								}
 
-								skipData := make([]byte, skipBytes)
-								if _, err := io.ReadFull(innerReader, skipData); err != nil {
-									return nil, err
+								if skipBytes > 0 {
+									if _, err := innerReader.Seek(int64(skipBytes), io.SeekCurrent); err != nil {
+										return nil, err
+									}
 								}
 							}
 						}
@@ -265,6 +647,34 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 	}
 
 	return result, nil
+}
+
+func (d *FeatureViewFeatureDBDao) decodeStringArray(innerReader *bytes.Reader, length uint32) []string {
+	arrayStringValue := make([]string, length)
+	if length > 0 {
+		offsets := make([]uint32, length+1)
+		binary.Read(innerReader, binary.LittleEndian, &offsets)
+		totalLength := offsets[length]
+
+		stringData := make([]byte, totalLength)
+		binary.Read(innerReader, binary.LittleEndian, &stringData)
+		for strIdx := uint32(0); strIdx < length; strIdx++ {
+			start := offsets[strIdx]
+			end := offsets[strIdx+1]
+			arrayStringValue[strIdx] = string(stringData[start:end])
+		}
+	}
+	return arrayStringValue
+}
+
+func (d *FeatureViewFeatureDBDao) getStringArrayCharLen(innerReader *bytes.Reader, length uint32) int {
+	if length > 0 {
+		innerReader.Seek(int64(length*4), io.SeekCurrent)
+		var totalLength uint32
+		binary.Read(innerReader, binary.LittleEndian, &totalLength)
+		return int(totalLength)
+	}
+	return 0
 }
 
 type FeatureDBBatchGetKKVRequest struct {
