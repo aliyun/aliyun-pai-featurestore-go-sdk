@@ -3,8 +3,8 @@ module github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2
 go 1.19
 
 require (
-	github.com/alibabacloud-go/darabonba-openapi/v2 v2.0.6
-	github.com/alibabacloud-go/paifeaturestore-20230621/v3 v3.1.4
+	github.com/alibabacloud-go/darabonba-openapi/v2 v2.0.9
+	github.com/alibabacloud-go/paifeaturestore-20230621/v4 v4.0.0
 	github.com/aliyun/aliyun-igraph-go-sdk v0.0.0-20221208132745-defc68e1b227
 	github.com/aliyun/aliyun-tablestore-go-sdk v1.7.7
 	github.com/antihax/optional v1.0.0
@@ -17,12 +17,12 @@ require (
 
 require (
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.4 // indirect
-	github.com/alibabacloud-go/debug v0.0.0-20190504072949-9472017b5c68 // indirect
+	github.com/alibabacloud-go/debug v1.0.0 // indirect
 	github.com/alibabacloud-go/endpoint-util v1.1.0 // indirect
 	github.com/alibabacloud-go/openapi-util v0.1.0 // indirect
-	github.com/alibabacloud-go/tea v1.2.1 // indirect
+	github.com/alibabacloud-go/tea v1.2.2 // indirect
 	github.com/alibabacloud-go/tea-utils v1.3.1 // indirect
-	github.com/alibabacloud-go/tea-utils/v2 v2.0.5 // indirect
+	github.com/alibabacloud-go/tea-utils/v2 v2.0.6 // indirect
 	github.com/alibabacloud-go/tea-xml v1.1.3 // indirect
 	github.com/aliyun/credentials-go v1.3.1 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
@@ -43,7 +43,7 @@ require (
 	github.com/tjfoc/gmsm v1.3.2 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.43.0 // indirect
-	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/net v0.20.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/ini.v1 v1.56.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect

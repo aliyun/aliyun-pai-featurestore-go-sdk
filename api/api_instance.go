@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v4/client"
 )
 
 // Linger please

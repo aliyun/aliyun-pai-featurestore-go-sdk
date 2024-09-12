@@ -4,7 +4,7 @@ import (
 	"context"
 	"strconv"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v4/client"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/antihax/optional"
 )
@@ -41,6 +41,9 @@ func (a *FsModelApiService) GetModelByID(modelId string) (GetModelResponse, erro
 	}
 	if id, err := strconv.Atoi(*response.Body.ProjectId); err == nil {
 		model.ProjectId = id
+	}
+	if response.Body.LabelPriorityLevel != nil {
+		model.LabelPriorityLevel = int(*response.Body.LabelPriorityLevel)
 	}
 
 	var features []*ModelFeatures

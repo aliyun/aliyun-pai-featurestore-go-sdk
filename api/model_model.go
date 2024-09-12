@@ -11,5 +11,6 @@ type Model struct {
 	LabelEventTime       string           `json:"label_event_time"`
 	TrainningSetTable    string           `json:"trainning_set_table"`
 	Features             []*ModelFeatures `json:"features"`
+	LabelPriorityLevel   int              `json:"label_priority_level"`
 	//Relations            *ModelRelations  `json:"relations,omitempty"`
 }
