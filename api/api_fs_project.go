@@ -4,7 +4,7 @@ import (
 	"context"
 	"strconv"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v3/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v4/client"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 )
 

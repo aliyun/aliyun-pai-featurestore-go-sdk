@@ -174,3 +174,7 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 	}
 	return featuresResult, nil
 }
+
+func (m *Model) GetLabelPriorityLevel() int {
+	return m.LabelPriorityLevel
+}
