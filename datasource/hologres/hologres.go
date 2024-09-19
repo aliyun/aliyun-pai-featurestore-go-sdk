@@ -77,3 +77,16 @@ func RegisterHologres(name, dsn string) {
 	hologresInstances[name] = m
 
 }
+
+func RemoveHologres(name string) {
+	hologres, ok := hologresInstances[name]
+	if !ok {
+		return
+	}
+
+	if hologres.DB != nil {
+		hologres.DB.Close()
+	}
+
+	delete(hologresInstances, name)
+}
