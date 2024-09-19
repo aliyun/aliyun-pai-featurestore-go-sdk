@@ -35,6 +35,14 @@ func GetTableStoreClient(name string) (*TableStoreClient, error) {
 	return tablestoreInstances[name], nil
 }
 
+func DeleteTableStoreClient(name string) {
+	if _, ok := tablestoreInstances[name]; !ok {
+		return
+	}
+
+	delete(tablestoreInstances, name)
+}
+
 func (o *TableStoreClient) GetClient() *tablestore.TableStoreClient {
 	return o.client
 }
