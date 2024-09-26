@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverpb"
 )
 
 func createFeatureSotreClient() (*FeatureStoreClient, error) {
@@ -110,4 +112,69 @@ func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
 	}
 
 	fmt.Println(features)
+}
+func TestWriteBloomKV(t *testing.T) {
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get project by name
+	project, err := client.GetProject("fs_demo_featuredb")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	featureView := project.GetFeatureView("user_expose")
+	if featureView == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	request := fdbserverpb.BatchWriteKVReqeust{}
+	for i := 0; i < 100; i++ {
+		request.Kvs = append(request.Kvs, &fdbserverpb.KVData{Key: "106", Value: []byte(fmt.Sprintf("item_%d", i))})
+	}
+	err = fdbserverpb.BatchWriteBloomKV(project, featureView, &request)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestBloomItems(t *testing.T) {
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get project by name
+	project, err := client.GetProject("fs_demo_featuredb")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	featureView := project.GetFeatureView("user_expose")
+	if featureView == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	request := fdbserverpb.TestBloomItemsRequest{Key: "106"}
+	for i := 0; i < 100; i++ {
+		request.Items = append(request.Items, fmt.Sprintf("item_%d", i))
+	}
+	tests, err := fdbserverpb.TestBloomItems(project, featureView, &request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tests) != len(request.Items) {
+		t.Fatal("bloom filter test failed")
+	}
+	for _, test := range tests {
+		if !test {
+			t.Fatal("bloom filter test failed")
+		}
+	}
+
 }
