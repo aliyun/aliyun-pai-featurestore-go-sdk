@@ -1,0 +1,37 @@
+syntax = "proto3";
+option go_package = "github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverpb";
+ 
+package fdbserverpb;
+message KVData {
+    string key = 1;
+    bytes value = 2;
+    int64 ts = 3;
+}
+
+message BatchWriteKVReqeust {
+    string database_name = 1;
+    string schema_name = 2;
+    string table_name = 3; 
+ 
+    repeated KVData kvs = 4;
+}
+message BatchWriteKVResponse {
+    bool success = 1;
+    int32 total_count = 2;
+    int32 success_count = 3;
+    repeated string error_messages = 4;
+    repeated KVData fail_kvs = 5;
+}
+
+message TestBloomItemsRequest {
+    string database_name = 1;
+    string schema_name = 2;
+    string table_name = 3; 
+ 
+    string key = 4;
+    repeated string items = 5;
+}
+ 
+message TestBloomItemsResponse {
+    repeated bool tests = 1;
+}
