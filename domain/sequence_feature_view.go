@@ -166,3 +166,7 @@ func (f *SequenceFeatureView) GetFields() []api.FeatureViewFields {
 func (f *SequenceFeatureView) GetIsWriteToFeatureDB() bool {
 	return f.WriteToFeatureDB || f.Project.OnlineDatasourceType == constants.Datasource_Type_FeatureDB
 }
+
+func (f *SequenceFeatureView) GetTTL() int {
+	return f.Ttl
+}
