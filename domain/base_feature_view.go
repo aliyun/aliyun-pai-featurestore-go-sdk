@@ -133,6 +133,8 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
 	var selectFields []string
 	selectFields = append(selectFields, f.primaryKeyField.Name)
+	seenFields := make(map[string]bool)
+	seenFields[f.primaryKeyField.Name] = true
 	for _, featureName := range features {
 		if featureName == "*" {
 			selectFields = append(selectFields, f.featureFields...)
@@ -148,7 +150,10 @@ func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []st
 				return nil, fmt.Errorf("feature name :%s not found in the featureview fields", featureName)
 			}
 
-			selectFields = append(selectFields, featureName)
+			if !seenFields[featureName] {
+				selectFields = append(selectFields, featureName)
+				seenFields[featureName] = true
+			}
 		}
 	}
 

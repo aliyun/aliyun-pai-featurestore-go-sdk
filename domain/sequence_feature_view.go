@@ -43,6 +43,16 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 		sequenceFeatureView.offline_2_online_seq_map[seqConfig.OfflineSeqName] = seqConfig.OnlineSeqName
 	}
 
+	seen := make(map[string]bool)
+	var uniqueSeqConfigs []*api.SeqConfig
+	for _, seqConfig := range sequenceFeatureView.sequenceConfig.SeqConfig {
+		if !seen[seqConfig.OnlineSeqName] {
+			uniqueSeqConfigs = append(uniqueSeqConfigs, seqConfig)
+			seen[seqConfig.OnlineSeqName] = true
+		}
+	}
+	sequenceFeatureView.sequenceConfig.SeqConfig = uniqueSeqConfigs
+
 	requiredElements1 := []string{"user_id", "item_id", "event"}
 	requiredElements2 := []string{"user_id", "item_id", "event", "timestamp"}
 	if len(sequenceFeatureView.sequenceConfig.DeduplicationMethod) == len(requiredElements1) {
@@ -105,6 +115,7 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
 	sequenceConfig := f.sequenceConfig
 	onlineConfig := []*api.SeqConfig{}
+	seenFields := make(map[string]bool)
 
 	for _, feature := range features {
 		if feature == "*" {
@@ -115,7 +126,10 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 			for _, seqConfig := range sequenceConfig.SeqConfig {
 				if seqConfig.OnlineSeqName == feature {
 					found = true
-					onlineConfig = append(onlineConfig, seqConfig)
+					if !seenFields[feature] {
+						onlineConfig = append(onlineConfig, seqConfig)
+						seenFields[feature] = true
+					}
 					break
 				}
 			}

@@ -77,6 +77,12 @@ func WithToken(token string) ClientOption {
 	}
 }
 
+func WithHologresPrefix(hologresPrefix string) ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.hologresPrefix = hologresPrefix
+	}
+}
+
 type FeatureStoreClient struct {
 	// loopLoadData flag to invoke loopLoadProjectData  function
 	loopLoadData bool
@@ -110,6 +116,9 @@ type FeatureStoreClient struct {
 
 	// sts token
 	token string
+
+	// hologres prefix for sts token
+	hologresPrefix string
 }
 
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
@@ -216,6 +225,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 		p.OnlineDataSource = getDataSourceResponse.Datasource
 		p.OnlineDataSource.Ak = ak
 		p.OnlineDataSource.TestMode = c.testMode
+		p.OnlineDataSource.HologresPrefix = c.hologresPrefix
 
 		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId, c.hologresPort, c.hologresPublicAddress)
 		if err != nil {

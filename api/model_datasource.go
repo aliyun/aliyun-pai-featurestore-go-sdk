@@ -26,13 +26,15 @@ type Datasource struct {
 	Ak Ak `json:"-"`
 
 	TestMode bool `json:"-"`
+
+	HologresPrefix string `json:"-"`
 }
 
 func (d *Datasource) GenerateDSN(datasourceType string) (DSN string) {
 	if datasourceType == constants.Datasource_Type_Hologres {
 		if d.TestMode {
 			if d.Ak.SecurityToken != "" {
-				DSN = fmt.Sprintf("postgres://paifsslr$%s:%s@%s/%s?sslmode=disable&connect_timeout=10&options=sts_token=%s",
+				DSN = fmt.Sprintf("postgres://%s%s:%s@%s/%s?sslmode=disable&connect_timeout=10&options=sts_token=%s", d.HologresPrefix,
 					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.PublicAddress, d.Database, url.QueryEscape(d.Ak.SecurityToken))
 			} else {
 				DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
@@ -40,7 +42,7 @@ func (d *Datasource) GenerateDSN(datasourceType string) (DSN string) {
 			}
 		} else {
 			if d.Ak.SecurityToken != "" {
-				DSN = fmt.Sprintf("postgres://paifsslr$%s:%s@%s/%s?sslmode=disable&connect_timeout=10&options=sts_token=%s",
+				DSN = fmt.Sprintf("postgres://%s%s:%s@%s/%s?sslmode=disable&connect_timeout=10&options=sts_token=%s", d.HologresPrefix,
 					d.Ak.AccesskeyId, d.Ak.AccesskeySecret, d.VpcAddress, d.Database, url.QueryEscape(d.Ak.SecurityToken))
 			} else {
 				DSN = fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable&connect_timeout=10",
