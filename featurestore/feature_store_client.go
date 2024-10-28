@@ -249,23 +249,32 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 		project := domain.NewProject(p, c.datasourceInitClient)
 		projectData[project.ProjectName] = project
 
-		// get feature entities
-		listFeatureEntitiesResponse, err := c.client.FeatureEntityApi.ListFeatureEntities(strconv.Itoa(p.ProjectId))
-		if err != nil {
-			c.logError(fmt.Errorf("list feature entities error, err=%v", err))
-			return err
-		}
-
-		for _, entity := range listFeatureEntitiesResponse.FeatureEntities {
-			if entity.ProjectId == project.ProjectId {
-				project.FeatureEntityMap[entity.FeatureEntityName] = domain.NewFeatureEntity(entity)
-			}
-		}
-
 		var (
 			pagesize   = 100
 			pagenumber = 1
 		)
+
+		// get feature entities
+		for {
+			listFeatureEntitiesResponse, err := c.client.FeatureEntityApi.ListFeatureEntities(int32(pagesize), int32(pagenumber), strconv.Itoa(p.ProjectId))
+			if err != nil {
+				c.logError(fmt.Errorf("list feature entities error, err=%v", err))
+				return err
+			}
+
+			for _, entity := range listFeatureEntitiesResponse.FeatureEntities {
+				project.FeatureEntityMap[entity.FeatureEntityName] = domain.NewFeatureEntity(entity)
+			}
+
+			if len(listFeatureEntitiesResponse.FeatureEntities) == 0 || pagesize*pagenumber > listFeatureEntitiesResponse.TotalCount {
+				break
+			}
+
+			pagenumber++
+
+		}
+
+		pagenumber = 1
 		// get feature views
 		for {
 			listFeatureViews, err := c.client.FeatureViewApi.ListFeatureViews(int32(pagesize), int32(pagenumber), strconv.Itoa(p.ProjectId))
