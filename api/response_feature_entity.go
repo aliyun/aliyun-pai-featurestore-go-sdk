@@ -1,6 +1,7 @@
 package api
 
 type ListFeatureEntitiesResponse struct {
+	TotalCount      int `json:"total_count"`
 	FeatureEntities []*FeatureEntity
 }
 

@@ -14,19 +14,21 @@ FeatureEntityApiService List FeatureEntities
 
 @return InlineResponse20079
 */
-func (a *FeatureEntityApiService) ListFeatureEntities(projectId string) (ListFeatureEntitiesResponse, error) {
+func (a *FeatureEntityApiService) ListFeatureEntities(pagesize, pagenumber int32, projectId string) (ListFeatureEntitiesResponse, error) {
 	var (
 		localVarReturnValue ListFeatureEntitiesResponse
 	)
 	request := paifeaturestore.ListFeatureEntitiesRequest{}
 	request.SetProjectId(projectId)
-	request.SetPageSize(100)
+	request.SetPageSize(pagesize)
+	request.SetPageNumber(pagenumber)
 
 	response, err := a.client.ListFeatureEntities(&a.client.instanceId, &request)
 	if err != nil {
 		return localVarReturnValue, err
 	}
 
+	localVarReturnValue.TotalCount = int(*response.Body.TotalCount)
 	var featureEntities []*FeatureEntity
 
 	for _, entity := range response.Body.FeatureEntities {
