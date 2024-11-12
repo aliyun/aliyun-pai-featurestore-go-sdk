@@ -222,3 +222,7 @@ func (f *BaseFeatureView) GetFields() []api.FeatureViewFields {
 func (f *BaseFeatureView) GetIsWriteToFeatureDB() bool {
 	return f.WriteToFeatureDB || f.Project.OnlineDatasourceType == constants.Datasource_Type_FeatureDB
 }
+
+func (f *BaseFeatureView) GetTTL() int {
+	return f.Ttl
+}
