@@ -14,6 +14,7 @@ type FeatureView interface {
 	GetFields() []api.FeatureViewFields
 	GetIsWriteToFeatureDB() bool
 	GetTTL() int
+	RowCount(string) int
 }
 
 func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) FeatureView {

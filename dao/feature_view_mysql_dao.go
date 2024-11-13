@@ -13,6 +13,7 @@ import (
 )
 
 type FeatureViewMysqlDao struct {
+	UnimplementedFeatureViewDao
 	db              *sql.DB
 	table           string
 	primaryKeyField string

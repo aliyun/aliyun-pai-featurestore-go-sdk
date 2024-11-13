@@ -226,3 +226,7 @@ func (f *BaseFeatureView) GetIsWriteToFeatureDB() bool {
 func (f *BaseFeatureView) GetTTL() int {
 	return f.Ttl
 }
+
+func (f *BaseFeatureView) RowCount(expr string) int {
+	return f.featureViewDao.RowCount(expr)
+}

@@ -16,6 +16,7 @@ import (
 )
 
 type FeatureViewIGraphDao struct {
+	UnimplementedFeatureViewDao
 	igraphClient    *aligraph.Client
 	group           string
 	label           string

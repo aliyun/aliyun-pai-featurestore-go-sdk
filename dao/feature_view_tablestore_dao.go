@@ -18,6 +18,7 @@ import (
 )
 
 type FeatureViewTableStoreDao struct {
+	UnimplementedFeatureViewDao
 	tablestoreClient *tablestore.TableStoreClient
 	table            string
 	primaryKeyField  string
