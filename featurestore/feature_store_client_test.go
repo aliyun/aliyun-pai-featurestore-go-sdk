@@ -18,7 +18,7 @@ func createFeatureSotreClient() (*FeatureStoreClient, error) {
 	fdbUser := os.Getenv("FEATUREDB_USERNAME")
 	fdbPassword := os.Getenv("FEATUREDB_PASSWORD")
 
-	return NewFeatureStoreClient("cn-beijing", accessId, accessKey, "ceci_test2", WithDomain("paifeaturestore.cn-beijing.aliyuncs.com"),
+	return NewFeatureStoreClient("cn-shenzhen", accessId, accessKey, "fdb_test", WithDomain("paifeaturestore.cn-shenzhen.aliyuncs.com"),
 		WithTestMode(), WithFeatureDBLogin(fdbUser, fdbPassword))
 
 }
@@ -124,7 +124,7 @@ func TestWriteBloomKV(t *testing.T) {
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_demo_featuredb")
+	project, err := client.GetProject("fdb_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestBloomItems(t *testing.T) {
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_demo_featuredb")
+	project, err := client.GetProject("fdb_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,6 +178,29 @@ func TestBloomItems(t *testing.T) {
 		if !test {
 			t.Fatal("bloom filter test failed")
 		}
+	}
+}
+func TestDeleteBloomByKey(t *testing.T) {
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get project by name
+	project, err := client.GetProject("fdb_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	featureView := project.GetFeatureView("user_expose")
+	if featureView == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	err = fdbserverpb.DeleteBloomByKey(project, featureView, "106")
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
