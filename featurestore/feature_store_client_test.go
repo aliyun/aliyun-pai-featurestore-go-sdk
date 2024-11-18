@@ -5,7 +5,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverpb"
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
 )
 
 func createFeatureSotreClient() (*FeatureStoreClient, error) {
@@ -15,7 +18,7 @@ func createFeatureSotreClient() (*FeatureStoreClient, error) {
 	fdbUser := os.Getenv("FEATUREDB_USERNAME")
 	fdbPassword := os.Getenv("FEATUREDB_PASSWORD")
 
-	return NewFeatureStoreClient("cn-beijing", accessId, accessKey, "fs_demo_featuredb", WithDomain("paifeaturestore.cn-beijing.aliyuncs.com"),
+	return NewFeatureStoreClient("cn-beijing", accessId, accessKey, "ceci_test2", WithDomain("paifeaturestore.cn-beijing.aliyuncs.com"),
 		WithTestMode(), WithFeatureDBLogin(fdbUser, fdbPassword))
 
 }
@@ -105,7 +108,7 @@ func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
 	}
 
 	// get online features
-	features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"199636459"}, []string{"*"}, nil)
+	features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"199636459", "192535056"}, []string{"*"}, nil)
 
 	if err != nil {
 		t.Error(err)
@@ -176,5 +179,81 @@ func TestBloomItems(t *testing.T) {
 			t.Fatal("bloom filter test failed")
 		}
 	}
+}
 
+func TestExpr(t *testing.T) {
+	//code := `(age < 30 && (3 <= level < 5) && sex=='male') `
+	testcases := []struct {
+		code   string
+		expect string
+	}{
+		{
+			code:   "metric_value > 6",
+			expect: "metric_value > '6'",
+		},
+		{
+			code:   "6 < metric_value ",
+			expect: "'6' < metric_value",
+		},
+		{
+			code:   "sex == 'male'",
+			expect: "sex = 'male'",
+		},
+		{
+			code:   "metric_value > 6 && sex == 'male'",
+			expect: "(metric_value > '6') and (sex = 'male')",
+		},
+		{
+			code:   "metric_value > 6 && sex == 'male' || os != 'ALL'",
+			expect: "((metric_value > '6') and (sex = 'male')) or (os != 'ALL')",
+		},
+		{
+			code:   "(metric_value > 6 && sex == 'male') || (os != 'ALL')",
+			expect: "((metric_value > '6') and (sex = 'male')) or (os != 'ALL')",
+		},
+		{
+			code:   "(age < 30 && (3 <= level < 5) && sex=='male')",
+			expect: "((age < '30') and (('3' <= level) and (level < '5'))) and (sex = 'male')",
+		},
+	}
+	for _, tcase := range testcases {
+		program, err := expr.Compile(tcase.code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		node := program.Node()
+		visitor := &dao.Visitor{}
+
+		ast.Walk(&node, visitor)
+
+		sql := visitor.ConvertToSql(visitor.LastNode)
+		fmt.Println(sql)
+		if tcase.expect != "" && sql != tcase.expect {
+			t.Fatal("create sql error", sql, tcase.expect)
+		}
+	}
+}
+
+func TestGetFeatureViewRowCount(t *testing.T) {
+
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get project by name
+	project, err := client.GetProject("ceci_test2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get featureview by name
+	user_feature_view := project.GetFeatureView("mc")
+	if user_feature_view == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	count := user_feature_view.RowCount("age > 30 && city == '北京市'")
+	fmt.Println(count)
 }

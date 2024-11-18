@@ -184,3 +184,7 @@ func (f *SequenceFeatureView) GetIsWriteToFeatureDB() bool {
 func (f *SequenceFeatureView) GetTTL() int {
 	return f.Ttl
 }
+
+func (f *SequenceFeatureView) RowCount(string) int {
+	return 0
+}

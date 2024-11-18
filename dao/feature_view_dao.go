@@ -12,6 +12,20 @@ import (
 type FeatureViewDao interface {
 	GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error)
 	GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
+	RowCount(string) int
+}
+
+type UnimplementedFeatureViewDao struct {
+}
+
+func (d *UnimplementedFeatureViewDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+func (d *UnimplementedFeatureViewDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+func (d *UnimplementedFeatureViewDao) RowCount(string) int {
+	return 0
 }
 
 func NewFeatureViewDao(config DaoConfig) FeatureViewDao {

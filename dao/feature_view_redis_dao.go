@@ -13,6 +13,7 @@ import (
 )
 
 type FeatureViewRedisDao struct {
+	UnimplementedFeatureViewDao
 	redisClinet     *redis.Client
 	redisPrefix     string
 	redisDelimiter  string

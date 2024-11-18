@@ -37,6 +37,7 @@ func init() {
 }
 
 type FeatureViewFeatureDBDao struct {
+	UnimplementedFeatureViewDao
 	featureDBClient *http.Client
 	database        string
 	schema          string

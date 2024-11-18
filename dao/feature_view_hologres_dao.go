@@ -11,6 +11,8 @@ import (
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/hologres"
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
 	"github.com/huandu/go-sqlbuilder"
 )
 
@@ -337,4 +339,79 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 
 	return results, nil
 
+}
+
+type Visitor struct {
+	LastNode *ast.BinaryNode
+}
+
+func (v *Visitor) Visit(node *ast.Node) {
+	switch n := (*node).(type) {
+	case *ast.BinaryNode:
+		v.LastNode = n
+	}
+}
+func (v *Visitor) ConvertToSql(node *ast.BinaryNode) string {
+	if node == nil {
+		return ""
+	}
+	if node.Operator != "&&" && node.Operator != "||" {
+		op := node.Operator
+		if op == "==" {
+			op = "="
+		}
+		if leftNode, ok := node.Left.(*ast.IdentifierNode); ok {
+			return fmt.Sprintf("%s %s '%s'", leftNode, op, strings.ReplaceAll(node.Right.String(), "\"", ""))
+		} else {
+			return fmt.Sprintf("'%s' %s %s", strings.ReplaceAll(node.Left.String(), "\"", ""), op, node.Right.String())
+		}
+
+	} else if node.Operator == "&&" {
+		left := v.ConvertToSql(node.Left.(*ast.BinaryNode))
+		right := v.ConvertToSql(node.Right.(*ast.BinaryNode))
+		return fmt.Sprintf("(%s) and (%s)", left, right)
+	} else if node.Operator == "||" {
+		left := v.ConvertToSql(node.Left.(*ast.BinaryNode))
+		right := v.ConvertToSql(node.Right.(*ast.BinaryNode))
+		return fmt.Sprintf("(%s) or (%s)", left, right)
+	}
+	return ""
+}
+
+func (d *FeatureViewHologresDao) RowCount(filterExpr string) int {
+	builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
+	builder.Select("count(*)")
+	builder.From(d.table)
+	if filterExpr != "" {
+		program, err := expr.Compile(filterExpr)
+		if err != nil {
+			fmt.Println(err)
+			return 0
+		}
+		node := program.Node()
+		visitor := &Visitor{}
+		ast.Walk(&node, visitor)
+
+		sqlWhere := visitor.ConvertToSql(visitor.LastNode)
+		builder.Where(sqlWhere)
+	}
+
+	sql, args := builder.Build()
+	fmt.Println("row count sql:", sql)
+	var count int
+	retry := 3
+	for i := 0; i < retry; i++ {
+		row := d.db.QueryRow(sql, args...)
+		err := row.Scan(&count)
+		if i == retry-1 {
+			fmt.Println(err)
+			return 0
+		}
+		if err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		return count
+	}
+	return count
 }
