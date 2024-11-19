@@ -100,3 +100,37 @@ func TestBloomItems(project *domain.Project, featureView domain.FeatureView, req
 	return responseBody.Tests, nil
 
 }
+
+func DeleteBloomByKey(project *domain.Project, featureView domain.FeatureView, key string) error {
+	fdbClient, err := featuredb.GetFeatureDBClient()
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/delete_bloom_key?key=%s",
+		fdbClient.Address, project.InstanceId, project.ProjectName, featureView.GetName(), key), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fdbClient.Token)
+	req.Header.Set("Auth", project.Signature)
+
+	response, err := fdbClient.Client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer response.Body.Close()
+
+	responseData, err := io.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
+
+	if response.StatusCode != 200 {
+		return fmt.Errorf("delete bloom table key error, status code: %d, response body: %s", response.StatusCode, string(responseData))
+	}
+	return nil
+
+}
