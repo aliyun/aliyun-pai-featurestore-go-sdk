@@ -173,6 +173,8 @@ func (a *FeatureViewApiService) ListFeatureViews(pagesize, pagenumber int32, pro
 	request.SetPageSize(pagesize)
 	request.SetPageNumber(pagenumber)
 	request.SetProjectId(projectId)
+	request.SetSortBy("GmtCreateTime")
+	request.SetOrder("ASC")
 
 	response, err := a.client.ListFeatureViews(&a.client.instanceId, &request)
 	if err != nil {
