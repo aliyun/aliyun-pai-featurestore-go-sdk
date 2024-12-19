@@ -7,11 +7,13 @@ import (
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
 type FeatureViewDao interface {
 	GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error)
 	GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
+	GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
 	RowCount(string) int
 }
 
@@ -22,6 +24,9 @@ func (d *UnimplementedFeatureViewDao) GetFeatures(keys []interface{}, selectFiel
 	return nil, nil
 }
 func (d *UnimplementedFeatureViewDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+func (d *UnimplementedFeatureViewDao) GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (d *UnimplementedFeatureViewDao) RowCount(string) int {
@@ -46,10 +51,10 @@ func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 	panic("not found FeatureViewDao implement")
 }
 
-func makePlayTimeMap(sequenceConfig api.FeatureViewSeqConfig) map[string]float64 {
+func makePlayTimeMap(playTimeFilter string) map[string]float64 {
 	sequencePlayTimeMap := make(map[string]float64)
-	if sequenceConfig.PlayTimeFilter != "" {
-		playTimes := strings.Split(sequenceConfig.PlayTimeFilter, ";")
+	if playTimeFilter != "" {
+		playTimes := strings.Split(playTimeFilter, ";")
 		for _, eventTime := range playTimes {
 			strs := strings.Split(eventTime, ":")
 			if len(strs) == 2 {
@@ -108,4 +113,21 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 
 	return properties
 
+}
+
+func combineBehaviorFeatures(offlineBehaviorInfo, onlineBehaviorInfo []map[string]interface{}, timestampField string) []map[string]interface{} {
+	// combine offline and online features
+	if len(offlineBehaviorInfo) > 0 {
+		index := 0
+		for index < len(onlineBehaviorInfo) {
+			if utils.ToInt64(onlineBehaviorInfo[index][timestampField], 0) < utils.ToInt64(offlineBehaviorInfo[0][timestampField], 0) {
+				break
+			}
+			index++
+		}
+
+		onlineBehaviorInfo = onlineBehaviorInfo[:index]
+		onlineBehaviorInfo = append(onlineBehaviorInfo, offlineBehaviorInfo...)
+	}
+	return onlineBehaviorInfo
 }
