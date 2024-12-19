@@ -9,6 +9,8 @@ go get github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2
 
 # 使用方式
 
+## 初始化 client
+
 - 初始化 client
 
 ```go
@@ -43,6 +45,10 @@ client, err := featurestore.NewFeatureStoreClient(regionId, accessId, accessKey,
 ```
 
  **注意：** 当使用 WithTestMode() 初始化 client 时，需要确认在线数据源是否已开启公网。通过公网访问onlinestore会有对应数据源的流量开销，可能会产生下行流量费用。因此建议在此模式下只进行测试，生产环境请勿添加 WithTestMode()。
+
+## 获取特征数据
+
+### 获取 FeatureView 的特征数据
 
 - 获取 (离线/实时) FeatureView 的特征数据
 
@@ -84,7 +90,7 @@ features, err := user_feature_view.GetOnlineFeatures([]interface{}{"100043186", 
 ]
 ```
 
-- 获取 序列特征 FeatureView 的特征数据
+- 获取 行为序列 FeatureView 的序列特征数据
 ```go
 // get project by name
 project, err := client.GetProject("holo_p1")
@@ -150,6 +156,59 @@ features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"186569075", "
 ]
 ```
 
+- 获取 行为序列 FeatureView 的行为表数据
+
+```go
+// get project by name
+project, err := client.GetProject("fs_test_ots")
+if err != nil {
+    // t.Fatal(err)
+}
+
+// get featureview by name
+user_feature_view := project.GetFeatureView("seq_fea")
+if user_feature_view == nil {
+    // t.Fatal("feature view not exist")
+}
+
+// get online features
+features, err := feature_view.GetBehaviorFeatures([]interface{}{"142688703"}, []interface{}{"click", "praise"}, []string{"*"})
+```
+行为（event）字段信息可以填写0至多个。
+
+[]string{"*"} 代表获取 featureview 下的所有行为特征字段， 也可以指定部分字段名称。
+
+返回的数据示例如下
+
+```json
+[
+    {
+        "event":"praise",
+        "event_time":1733040792,
+        "exp_id":"ER2_L2#EG2#E3",
+        "item_id":"284794190",
+        "net_type":"wifi",
+        "page":"home",
+        "playtime":0,
+        "request_id":994994441,
+        "user_id":142688703
+    },
+    {
+        "event":"click",
+        "event_time":1732990248,
+        "exp_id":"ER2_L2#EG2#E3",
+        "item_id":"296088863",
+        "net_type":"wifi",
+        "page":"detail",
+        "playtime":15.499447802946065,
+        "request_id":966793253,
+        "user_id":142688703
+    }
+]
+```
+
+
+### 获取模型特征
 
 - 获取 ModelFeature 里的特征数据
 

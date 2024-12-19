@@ -47,3 +47,8 @@ const (
 	Feature_View_Type_Stream   = "Stream"
 	Feature_View_Type_Sequence = "Sequence"
 )
+
+const (
+	Seq_Registration_Mode_Full_Sequence = "full_sequence"
+	Seq_Registration_Mode_Only_Behavior = "only_behavior"
+)

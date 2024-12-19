@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
@@ -139,6 +140,9 @@ func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []st
 		if featureName == "*" {
 			selectFields = append(selectFields, f.featureFields...)
 		} else {
+			if seenFields[featureName] {
+				continue
+			}
 			found := false
 			for _, field := range f.featureFields {
 				if field == featureName {
@@ -150,10 +154,8 @@ func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []st
 				return nil, fmt.Errorf("feature name :%s not found in the featureview fields", featureName)
 			}
 
-			if !seenFields[featureName] {
-				selectFields = append(selectFields, featureName)
-				seenFields[featureName] = true
-			}
+			selectFields = append(selectFields, featureName)
+			seenFields[featureName] = true
 		}
 	}
 
@@ -191,6 +193,10 @@ func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []st
 
 	return featureResult, err
 
+}
+
+func (f *BaseFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
+	return nil, errors.New("only sequence feature view supports GetBehaviorFeatures")
 }
 
 func (f *BaseFeatureView) GetName() string {

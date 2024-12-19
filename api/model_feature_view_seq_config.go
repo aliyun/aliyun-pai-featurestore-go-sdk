@@ -1,6 +1,9 @@
 package api
 
 type FeatureViewSeqConfig struct {
+	RegistrationMode              string       `json:"registration_mode"`
+	ReferencedFeatureViewId       int          `json:"referenced_feature_view_id,omitempty"`
+	ReferencedFeatureViewName     string       `json:"referenced_feature_view_name,omitempty"`
 	ItemIdField                   string       `json:"item_id_field"`
 	EventField                    string       `json:"event_field"`
 	TimestampField                string       `json:"timestamp_field"`
