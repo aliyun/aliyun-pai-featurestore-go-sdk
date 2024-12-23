@@ -353,7 +353,7 @@ func (d *FeatureViewHologresDao) GetUserBehaviorFeature(userIds []interface{}, e
 	onlineFunc := func(userId interface{}) []map[string]interface{} {
 		builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
 		builder.Select(selector...)
-		builder.From(d.offlineTable)
+		builder.From(d.onlineTable)
 		where := []string{builder.Equal(fmt.Sprintf("\"%s\"", d.primaryKeyField), userId),
 			builder.GreaterThan(fmt.Sprintf("\"%s\"", sequenceConfig.TimestampField), currTime-86400*5)}
 		if len(events) > 0 {
