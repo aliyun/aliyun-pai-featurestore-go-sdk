@@ -868,7 +868,7 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 
 		var response *http.Response
 		if len(events) == 0 {
-			prefixs := []string{fmt.Sprintf("%v", user_id)}
+			prefixs := []string{fmt.Sprintf("%v\u001D", user_id)}
 			request := FeatureDBScanKKVRequest{
 				Prefixs:   prefixs,
 				WithValue: true,
