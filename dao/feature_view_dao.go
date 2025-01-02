@@ -15,6 +15,7 @@ type FeatureViewDao interface {
 	GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
 	GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
 	RowCount(string) int
+	RowCountIds(string) ([]string, int, error)
 }
 
 type UnimplementedFeatureViewDao struct {
@@ -31,6 +32,9 @@ func (d *UnimplementedFeatureViewDao) GetUserBehaviorFeature(userIds []interface
 }
 func (d *UnimplementedFeatureViewDao) RowCount(string) int {
 	return 0
+}
+func (d *UnimplementedFeatureViewDao) RowCountIds(string) ([]string, int, error) {
+	return nil, 0, nil
 }
 
 func NewFeatureViewDao(config DaoConfig) FeatureViewDao {

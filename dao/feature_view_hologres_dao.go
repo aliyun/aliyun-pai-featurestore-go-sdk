@@ -582,3 +582,39 @@ func (d *FeatureViewHologresDao) RowCount(filterExpr string) int {
 	}
 	return count
 }
+
+func (d *FeatureViewHologresDao) RowCountIds(filterExpr string) ([]string, int, error) {
+	builder := sqlbuilder.PostgreSQL.NewSelectBuilder()
+	builder.Select(d.primaryKeyField)
+	builder.From(d.table)
+	if filterExpr != "" {
+		program, err := expr.Compile(filterExpr)
+		if err != nil {
+			return nil, 0, err
+		}
+		node := program.Node()
+		visitor := &Visitor{}
+		ast.Walk(&node, visitor)
+
+		sqlWhere := visitor.ConvertToSql(visitor.LastNode)
+		builder.Where(sqlWhere)
+	}
+
+	sql, args := builder.Build()
+	fmt.Println("sql:", sql)
+	rows, err := d.db.Query(sql, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	ids := make([]string, 0, 1024)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, 0, err
+		} else {
+			ids = append(ids, id)
+		}
+	}
+	return ids, len(ids), nil
+}

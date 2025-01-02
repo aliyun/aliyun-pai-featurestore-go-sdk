@@ -15,7 +15,12 @@ type FeatureView interface {
 	GetFields() []api.FeatureViewFields
 	GetIsWriteToFeatureDB() bool
 	GetTTL() int
+
+	// RowCount gets the count filter by the given expression
 	RowCount(string) int
+
+	//RowCountIds gets the primary key list and  count filter by the given expression
+	RowCountIds(expr string) ([]string, int, error)
 }
 
 func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) FeatureView {
