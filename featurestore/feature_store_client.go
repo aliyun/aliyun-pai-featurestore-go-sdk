@@ -121,7 +121,12 @@ type FeatureStoreClient struct {
 	hologresPrefix string
 }
 
-func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (*FeatureStoreClient, error) {
+func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (fsclient *FeatureStoreClient, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			//err = fmt.Errorf("error: %v", r)
+		}
+	}()
 	client := FeatureStoreClient{
 		projectMap:           make(map[string]*domain.Project, 0),
 		loopLoadData:         true,
@@ -149,11 +154,11 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 
 	client.client = apiClient
 
-	if err := client.Validate(); err != nil {
+	if err = client.Validate(); err != nil {
 		return nil, err
 	}
 
-	if err := client.LoadProjectData(); err != nil {
+	if err = client.LoadProjectData(); err != nil {
 		return nil, err
 	}
 
@@ -294,7 +299,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 					getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(featureView.RegisterDatasourceId, c.hologresPort, c.hologresPublicAddress)
 					if err != nil {
 						c.logError(fmt.Errorf("get datasource error, err=%v", err))
-						continue
+						return err
 					}
 					featureView.RegisterDataSource = getDataSourceResponse.Datasource
 				}
@@ -353,6 +358,14 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 func (c *FeatureStoreClient) loopLoadProjectData() {
 	for {
 		time.Sleep(time.Minute)
-		c.LoadProjectData()
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					fmt.Println("Recovered from panic:", r)
+				}
+			}()
+
+			c.LoadProjectData()
+		}()
 	}
 }
