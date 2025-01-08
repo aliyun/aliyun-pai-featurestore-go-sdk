@@ -236,3 +236,8 @@ func (f *BaseFeatureView) GetTTL() int {
 func (f *BaseFeatureView) RowCount(expr string) int {
 	return f.featureViewDao.RowCount(expr)
 }
+
+// RowCountIds implements FeatureView.
+func (f *BaseFeatureView) RowCountIds(expr string) ([]string, int, error) {
+	return f.featureViewDao.RowCountIds(expr)
+}

@@ -313,3 +313,6 @@ func (f *SequenceFeatureView) GetTTL() int {
 func (f *SequenceFeatureView) RowCount(string) int {
 	return 0
 }
+func (f *SequenceFeatureView) RowCountIds(string) ([]string, int, error) {
+	return nil, 0, nil
+}
