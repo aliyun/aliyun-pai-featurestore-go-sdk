@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"fortio.org/assert"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverpb"
 	"github.com/expr-lang/expr"
@@ -279,4 +280,31 @@ func TestGetFeatureViewRowCount(t *testing.T) {
 
 	count := user_feature_view.RowCount("age > 30 && city == '北京市'")
 	fmt.Println(count)
+}
+
+func TestFeatureViewRowIdCount(t *testing.T) {
+
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("featuredb test", func(t *testing.T) {
+		// get project by name
+		project, err := client.GetProject("fdb_test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// get featureview by name
+		user_feature_view := project.GetFeatureView("user_test_2")
+		if user_feature_view == nil {
+			t.Fatal("feature view not exist")
+		}
+		ids, count, err := user_feature_view.RowCountIds("boolean_field==false")
+		assert.Equal(t, nil, err)
+		t.Log(count, len(ids))
+
+	})
+
 }

@@ -14,11 +14,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aliyun/aliyun-odps-go-sdk/arrow/array"
+	"github.com/aliyun/aliyun-odps-go-sdk/arrow/ipc"
+	"github.com/aliyun/aliyun-odps-go-sdk/arrow/memory"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverfb"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/vm"
 )
 
 const (
@@ -1099,4 +1104,161 @@ func deserialize(r io.Reader) ([]byte, error) {
 	}
 
 	return data, nil
+}
+func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int, error) {
+	snapshotId, _, err := d.createSnapshot()
+	if err != nil {
+		return nil, 0, err
+	}
+	var program *vm.Program
+	if filterExpr != "" {
+		program, err = expr.Compile(filterExpr)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	alloc := memory.NewGoAllocator()
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots/%s/scan",
+		d.address, d.database, d.schema, d.table, snapshotId), bytes.NewReader(nil))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", d.token)
+	req.Header.Set("Auth", d.signature)
+	response, err := d.featureDBClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		return nil, 0, fmt.Errorf("status code: %d, response body: %s", response.StatusCode, string(body))
+	}
+
+	// Arrow IPC reader
+	reader, _ := ipc.NewReader(response.Body, ipc.WithAllocator(alloc))
+
+	readFeatureDBFunc_F_1 := func(innerReader *bytes.Reader) (map[string]interface{}, error) {
+		properties := make(map[string]interface{})
+
+		for _, field := range d.fields {
+			var isNull uint8
+			if err := binary.Read(innerReader, binary.LittleEndian, &isNull); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return nil, err
+			}
+			if isNull == 1 {
+				// 跳过空值
+				continue
+			}
+
+			switch d.fieldTypeMap[field] {
+			case constants.FS_INT32:
+				var int32Value int32
+				binary.Read(innerReader, binary.LittleEndian, &int32Value)
+				properties[field] = int32Value
+			case constants.FS_INT64:
+				var int64Value int64
+				binary.Read(innerReader, binary.LittleEndian, &int64Value)
+				properties[field] = int64Value
+			case constants.FS_FLOAT:
+				var float32Value float32
+				binary.Read(innerReader, binary.LittleEndian, &float32Value)
+				properties[field] = float32Value
+			case constants.FS_DOUBLE:
+				var float64Value float64
+				binary.Read(innerReader, binary.LittleEndian, &float64Value)
+				properties[field] = float64Value
+			case constants.FS_STRING:
+				var length uint32
+				binary.Read(innerReader, binary.LittleEndian, &length)
+				strBytes := make([]byte, length)
+				binary.Read(innerReader, binary.LittleEndian, &strBytes)
+				properties[field] = string(strBytes)
+			case constants.FS_BOOLEAN:
+				var boolValue bool
+				binary.Read(innerReader, binary.LittleEndian, &boolValue)
+				properties[field] = boolValue
+			default:
+				var length uint32
+				binary.Read(innerReader, binary.LittleEndian, &length)
+				strBytes := make([]byte, length)
+				binary.Read(innerReader, binary.LittleEndian, &strBytes)
+				properties[field] = string(strBytes)
+			}
+		}
+		return properties, nil
+	}
+	ids := make([]string, 0, 1024)
+	for reader.Next() {
+		record := reader.Record()
+		innerReader := readerPool.Get().(*bytes.Reader)
+		for i := 0; i < int(record.NumRows()); i++ {
+			if filterExpr == "" {
+				ids = append(ids, record.Column(0).(*array.String).Value(i))
+			} else {
+				dataBytes := record.Column(1).(*array.Binary).Value(i)
+				if len(dataBytes) < 2 {
+					continue
+				}
+				innerReader.Reset(dataBytes)
+
+				// 读取版本号
+				var protocalVersion, ifNullFlagVersion uint8
+				binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
+				binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
+				properties, err := readFeatureDBFunc_F_1(innerReader)
+				if err != nil {
+					return nil, 0, err
+				}
+				if ret, err := expr.Run(program, properties); err != nil {
+					return nil, 0, err
+				} else if r, ok := ret.(bool); ok && r {
+					ids = append(ids, record.Column(0).(*array.String).Value(i))
+				}
+			}
+		}
+		readerPool.Put(innerReader)
+		record.Release()
+	}
+	return ids, len(ids), nil
+}
+
+func (d *FeatureViewFeatureDBDao) createSnapshot() (string, int64, error) {
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots",
+		d.address, d.database, d.schema, d.table), bytes.NewReader(nil))
+	if err != nil {
+		return "", 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", d.token)
+	req.Header.Set("Auth", d.signature)
+	response, err := d.featureDBClient.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		return "", 0, fmt.Errorf("status code: %d, response body: %s", response.StatusCode, string(body))
+	}
+	resonseBody := struct {
+		RequestId string         `json:"request_id,omitempty"`
+		Code      string         `json:"code"`
+		Message   string         `json:"message,omitempty"`
+		Data      map[string]any `json:"data,omitempty"`
+	}{}
+
+	decoder := json.NewDecoder(response.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&resonseBody); err != nil {
+		return "", 0, err
+	}
+
+	return resonseBody.Data["snapshot_id"].(string), utils.ToInt64(resonseBody.Data["ts"], 0), nil
 }
