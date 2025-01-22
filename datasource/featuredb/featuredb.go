@@ -2,20 +2,23 @@ package featuredb
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"time"
 )
 
 type FeatureDBClient struct {
-	Client  *http.Client
-	Address string
-	Token   string
+	Client     *http.Client
+	Address    string
+	VpcAddress string
+	Token      string
 }
 
 var (
 	featureDBClient *FeatureDBClient
 )
 
-func InitFeatureDBClient(address, token string) {
+func InitFeatureDBClient(address, token, vpcAddress string) {
 	if featureDBClient != nil {
 		return
 	}
@@ -25,12 +28,16 @@ func InitFeatureDBClient(address, token string) {
 			MaxConnsPerHost:     1000,
 			MaxIdleConns:        1000,
 			MaxIdleConnsPerHost: 1000,
+			DialContext: (&net.Dialer{
+				Timeout: 500 * time.Millisecond,
+			}).DialContext,
 		},
 	}
 	featureDBClient = &FeatureDBClient{
-		Client:  client,
-		Address: address,
-		Token:   token,
+		Client:     client,
+		Address:    address,
+		Token:      token,
+		VpcAddress: vpcAddress,
 	}
 }
 

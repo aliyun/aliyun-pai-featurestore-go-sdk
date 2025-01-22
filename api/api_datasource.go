@@ -74,6 +74,7 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int, holog
 			datasource.VpcAddress = config["fdb_vpc_address"]
 			datasource.PublicAddress = config["fdb_public_address"]
 			datasource.Token = config["token"]
+			datasource.FdbVpcAddress = config["fdb_vpc_plk_address"]
 		}
 	}
 
@@ -82,7 +83,7 @@ func (a *DatasourceApiService) DatasourceDatasourceIdGet(datasourceId int, holog
 	return localVarReturnValue, nil
 }
 
-func (a *DatasourceApiService) GetFeatureDBDatasourceInfo(isTestMode bool, workspaceId string) (string, string, error) {
+func (a *DatasourceApiService) GetFeatureDBDatasourceInfo(isTestMode bool, workspaceId string) (string, string, string, error) {
 
 	featureDBType := "FeatureDB"
 	request := paifeaturestore.ListDatasourcesRequest{
@@ -91,26 +92,26 @@ func (a *DatasourceApiService) GetFeatureDBDatasourceInfo(isTestMode bool, works
 	}
 	listDatasourcesResponse, err := a.client.ListDatasources(&a.client.instanceId, &request)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	for _, datasource := range listDatasourcesResponse.Body.Datasources {
 		if _, err := strconv.Atoi(*datasource.DatasourceId); err == nil {
 			response, err := a.client.GetDatasource(&a.client.instanceId, datasource.DatasourceId)
 			if err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 			var config map[string]string
 			if err := json.Unmarshal([]byte(*response.Body.Config), &config); err == nil {
 				if isTestMode {
-					return config["fdb_public_address"], config["token"], nil
+					return config["fdb_public_address"], config["token"], "", nil
 				} else {
-					return config["fdb_vpc_address"], config["token"], nil
+					return config["fdb_vpc_address"], config["token"], config["fdb_vpc_plk_address"], nil
 				}
 			}
 		}
 	}
 
-	return "", "", nil
+	return "", "", "", nil
 
 }

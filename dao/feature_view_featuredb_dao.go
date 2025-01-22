@@ -48,6 +48,12 @@ type FeatureViewFeatureDBDao struct {
 	fields          []string
 	signature       string
 	primaryKeyField string
+
+	vpcAddress     string
+	currentAddress string
+	addressMutex   sync.RWMutex
+	checkInterval  time.Duration
+	stopChan       chan struct{}
 }
 
 func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
@@ -59,6 +65,8 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		signature:       config.FeatureDBSignature,
 		primaryKeyField: config.PrimaryKeyField,
 		fields:          config.Fields,
+		checkInterval:   1 * time.Minute,
+		stopChan:        make(chan struct{}),
 	}
 	client, err := featuredb.GetFeatureDBClient()
 	if err != nil {
@@ -69,8 +77,49 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 
 	dao.address = client.Address
 	dao.token = client.Token
+	dao.vpcAddress = fmt.Sprintf("http://%s", client.VpcAddress)
+	// 防止打通后的地址访问不通，默认先设置使用原先的地址，并开启协程检测打通地址的连通性
+	dao.currentAddress = dao.address
+	dao.checkVpcAddress()
+	if dao.vpcAddress != "" {
+		go dao.backgroundcCheckVpcAddress()
+	}
 
 	return &dao
+}
+
+func (d *FeatureViewFeatureDBDao) backgroundcCheckVpcAddress() {
+	d.checkVpcAddress()
+
+	ticker := time.NewTicker(d.checkInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-d.stopChan:
+			return
+		case <-ticker.C:
+			d.checkVpcAddress()
+		}
+	}
+}
+
+func (d *FeatureViewFeatureDBDao) checkVpcAddress() {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/health", d.vpcAddress), nil)
+	if err == nil {
+		req.Header.Set("Auth", d.signature)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := d.featureDBClient.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			d.addressMutex.Lock()
+			d.currentAddress = d.vpcAddress
+			d.addressMutex.Unlock()
+			return
+		}
+	}
+
+	d.addressMutex.Lock()
+	d.currentAddress = d.address
+	d.addressMutex.Unlock()
 }
 
 func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
@@ -105,11 +154,14 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				pkeys = append(pkeys, utils.ToString(k, ""))
 			}
 			body, _ := json.Marshal(map[string]any{"keys": pkeys})
+			d.addressMutex.RLock()
+			currentAddress := d.currentAddress
+			d.addressMutex.RUnlock()
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", currentAddress, d.database, d.schema, d.table, len(pkeys))
 			requestBody := readerPool.Get().(*bytes.Reader)
 			defer readerPool.Put(requestBody)
 			requestBody.Reset(body)
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=",
-				d.address, d.database, d.schema, d.table, len(pkeys)), requestBody)
+			req, err := http.NewRequest("POST", url, requestBody)
 			if err != nil {
 				errChan <- err
 				return
@@ -120,8 +172,26 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 
 			response, err := d.featureDBClient.Do(req)
 			if err != nil {
-				errChan <- err
-				return
+				if currentAddress == d.vpcAddress {
+					d.addressMutex.Lock()
+					d.currentAddress = d.address
+					d.addressMutex.Unlock()
+					url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", d.address, d.database, d.schema, d.table, len(pkeys))
+					req, err = http.NewRequest("POST", url, requestBody)
+					if err != nil {
+						errChan <- err
+						return
+					}
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("Authorization", d.token)
+					req.Header.Set("Auth", d.signature)
+					response, err = d.featureDBClient.Do(req)
+				}
+
+				if err != nil {
+					errChan <- err
+					return
+				}
 			}
 			defer response.Body.Close() // 确保关闭response.Body
 			// 检查状态码
@@ -703,8 +773,11 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			Length: seqLen,
 		}
 		body, _ := json.Marshal(request)
-		req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv",
-			d.address, d.database, d.schema, d.table), bytes.NewReader(body))
+		d.addressMutex.RLock()
+		currentAddress := d.currentAddress
+		d.addressMutex.RUnlock()
+		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", currentAddress, d.database, d.schema, d.table)
+		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 		if err != nil {
 			errChan <- err
 			return nil
@@ -715,8 +788,26 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 
 		response, err := d.featureDBClient.Do(req)
 		if err != nil {
-			errChan <- err
-			return nil
+			if currentAddress == d.vpcAddress {
+				d.addressMutex.Lock()
+				d.currentAddress = d.address
+				d.addressMutex.Unlock()
+				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.address, d.database, d.schema, d.table)
+				req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+				if err != nil {
+					errChan <- err
+					return nil
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", d.token)
+				req.Header.Set("Auth", d.signature)
+				response, err = d.featureDBClient.Do(req)
+			}
+
+			if err != nil {
+				errChan <- err
+				return nil
+			}
 		}
 		defer response.Body.Close() // 确保关闭response.Body
 		// 检查状态码
@@ -874,8 +965,11 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 				WithValue: true,
 			}
 			body, _ := json.Marshal(request)
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv",
-				d.address, d.database, d.schema, d.table), bytes.NewReader(body))
+			d.addressMutex.RLock()
+			currentAddress := d.currentAddress
+			d.addressMutex.RUnlock()
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", currentAddress, d.database, d.schema, d.table)
+			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
@@ -885,8 +979,25 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 			req.Header.Set("Auth", d.signature)
 			response, err = d.featureDBClient.Do(req)
 			if err != nil {
-				errChan <- err
-				return nil
+				if currentAddress == d.vpcAddress {
+					d.addressMutex.Lock()
+					d.currentAddress = d.address
+					d.addressMutex.Unlock()
+					url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", d.address, d.database, d.schema, d.table)
+					req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+					if err != nil {
+						errChan <- err
+						return nil
+					}
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("Authorization", d.token)
+					req.Header.Set("Auth", d.signature)
+					response, err = d.featureDBClient.Do(req)
+				}
+				if err != nil {
+					errChan <- err
+					return nil
+				}
 			}
 		} else {
 			pks := make([]string, 0, len(events))
@@ -898,8 +1009,11 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 				WithValue: true,
 			}
 			body, _ := json.Marshal(request)
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv",
-				d.address, d.database, d.schema, d.table), bytes.NewReader(body))
+			d.addressMutex.RLock()
+			currentAddress := d.currentAddress
+			d.addressMutex.RUnlock()
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", currentAddress, d.database, d.schema, d.table)
+			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
@@ -909,8 +1023,25 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 			req.Header.Set("Auth", d.signature)
 			response, err = d.featureDBClient.Do(req)
 			if err != nil {
-				errChan <- err
-				return nil
+				if currentAddress == d.vpcAddress {
+					d.addressMutex.Lock()
+					d.currentAddress = d.address
+					d.addressMutex.Unlock()
+					url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.address, d.database, d.schema, d.table)
+					req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+					if err != nil {
+						errChan <- err
+						return nil
+					}
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("Authorization", d.token)
+					req.Header.Set("Auth", d.signature)
+					response, err = d.featureDBClient.Do(req)
+				}
+				if err != nil {
+					errChan <- err
+					return nil
+				}
 			}
 		}
 

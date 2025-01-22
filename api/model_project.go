@@ -16,8 +16,9 @@ type Project struct {
 	OfflineDataSource *Datasource `json:"offline_datasource,omitempty"`
 	OnlineDataSource  *Datasource `json:"online_datasource,omitempty"`
 
-	InstanceId       string `json:"instance_id,omitempty"`
-	Signature        string `json:"-"`
-	FeatureDBAddress string `json:"-"`
-	FeatureDBToken   string `json:"-"`
+	InstanceId          string `json:"instance_id,omitempty"`
+	Signature           string `json:"-"`
+	FeatureDBAddress    string `json:"-"`
+	FeatureDBToken      string `json:"-"`
+	FeatureDBVpcAddress string `json:"-"`
 }

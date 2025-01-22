@@ -119,6 +119,9 @@ type FeatureStoreClient struct {
 
 	// hologres prefix for sts token
 	hologresPrefix string
+
+	// stopChan to stop loopLoadProjectData
+	stopChan chan struct{}
 }
 
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (fsclient *FeatureStoreClient, err error) {
@@ -132,6 +135,7 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 		loopLoadData:         true,
 		datasourceInitClient: true,
 		hologresPort:         80,
+		stopChan:             make(chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -243,7 +247,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 		p.OfflineDataSource.TestMode = c.testMode
 
 		// get featuredb datasource
-		p.FeatureDBAddress, p.FeatureDBToken, err = c.client.DatasourceApi.GetFeatureDBDatasourceInfo(c.testMode, p.OfflineDataSource.WorkspaceId)
+		p.FeatureDBAddress, p.FeatureDBToken, p.FeatureDBVpcAddress, err = c.client.DatasourceApi.GetFeatureDBDatasourceInfo(c.testMode, p.OfflineDataSource.WorkspaceId)
 		if err != nil {
 			c.logError(fmt.Errorf("get featuredb datasource, err=%v", err))
 			return err
@@ -356,16 +360,26 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 }
 
 func (c *FeatureStoreClient) loopLoadProjectData() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 	for {
-		time.Sleep(time.Minute)
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					fmt.Println("Recovered from panic:", r)
-				}
-			}()
+		select {
+		case <-c.stopChan:
+			return
+		case <-ticker.C:
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						fmt.Println("Recovered from panic:", r)
+					}
+				}()
 
-			c.LoadProjectData()
-		}()
+				c.LoadProjectData()
+			}()
+		}
 	}
+}
+
+func (c *FeatureStoreClient) Stop() {
+	close(c.stopChan)
 }
