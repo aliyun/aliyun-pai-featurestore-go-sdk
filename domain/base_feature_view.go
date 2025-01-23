@@ -241,3 +241,8 @@ func (f *BaseFeatureView) RowCount(expr string) int {
 func (f *BaseFeatureView) RowCountIds(expr string) ([]string, int, error) {
 	return f.featureViewDao.RowCountIds(expr)
 }
+
+// ScanAndIterateData implements FeatureView.
+func (f *BaseFeatureView) ScanAndIterateData(filter string, ch chan<- string) ([]string, error) {
+	return f.featureViewDao.ScanAndIterateData(filter, ch)
+}
