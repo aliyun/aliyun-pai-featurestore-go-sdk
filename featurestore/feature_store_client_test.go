@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"fortio.org/assert"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverpb"
 	"github.com/expr-lang/expr"
@@ -279,4 +280,85 @@ func TestGetFeatureViewRowCount(t *testing.T) {
 
 	count := user_feature_view.RowCount("age > 30 && city == '北京市'")
 	fmt.Println(count)
+}
+
+func TestFeatureViewRowIdCount(t *testing.T) {
+
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("featuredb test", func(t *testing.T) {
+		// get project by name
+		project, err := client.GetProject("fdb_test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// get featureview by name
+		user_feature_view := project.GetFeatureView("user_test_2")
+		if user_feature_view == nil {
+			t.Fatal("feature view not exist")
+		}
+		ids, count1, err := user_feature_view.RowCountIds("boolean_field==false")
+		assert.Equal(t, nil, err)
+		assert.Equal(t, count1, len(ids))
+		_, count2, _ := user_feature_view.RowCountIds("boolean_field") // true
+
+		_, total, _ := user_feature_view.RowCountIds("") // true
+		assert.Equal(t, count1+count2, total)
+	})
+
+}
+
+func TestScanAndIterateData(t *testing.T) {
+
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("no channel", func(t *testing.T) {
+		// get project by name
+		project, err := client.GetProject("fdb_test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// get featureview by name
+		user_feature_view := project.GetFeatureView("user_test_2")
+		if user_feature_view == nil {
+			t.Fatal("feature view not exist")
+		}
+		ids, err := user_feature_view.ScanAndIterateData("boolean_field==false", nil)
+		assert.Equal(t, nil, err)
+		t.Log("ids size:", len(ids))
+	})
+	t.Run("have channel", func(t *testing.T) {
+		// get project by name
+		project, err := client.GetProject("fdb_test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch := make(chan string)
+		// get featureview by name
+		user_feature_view := project.GetFeatureView("user_test_2")
+		if user_feature_view == nil {
+			t.Fatal("feature view not exist")
+		}
+		ids, err := user_feature_view.ScanAndIterateData("boolean_field==false", ch)
+		assert.Equal(t, nil, err)
+		t.Log("ids size:", len(ids))
+
+		i := 0
+		for id := range ch {
+			t.Log(id)
+			i++
+			if i > 100 {
+				break
+			}
+		}
+	})
+
 }

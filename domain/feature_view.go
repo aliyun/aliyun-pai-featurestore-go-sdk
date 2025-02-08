@@ -21,6 +21,10 @@ type FeatureView interface {
 
 	//RowCountIds gets the primary key list and  count filter by the given expression
 	RowCountIds(expr string) ([]string, int, error)
+
+	// ScanAndIterateData gets the primary key list  by the given expression
+	// If stream feature view can iterate the data deliver to the channel
+	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
 }
 
 func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) FeatureView {

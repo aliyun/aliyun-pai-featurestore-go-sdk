@@ -3,9 +3,11 @@ module github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2
 go 1.19
 
 require (
+	fortio.org/assert v1.2.1
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.0.9
 	github.com/alibabacloud-go/paifeaturestore-20230621/v4 v4.0.0
 	github.com/aliyun/aliyun-igraph-go-sdk v0.0.0-20221208132745-defc68e1b227
+	github.com/aliyun/aliyun-odps-go-sdk/arrow v0.0.1
 	github.com/aliyun/aliyun-tablestore-go-sdk v1.7.7
 	github.com/antihax/optional v1.0.0
 	github.com/expr-lang/expr v1.16.9
@@ -42,10 +44,12 @@ require (
 	github.com/klauspost/compress v1.17.3 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/pierrec/lz4/v4 v4.1.11 // indirect
 	github.com/tjfoc/gmsm v1.3.2 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.43.0 // indirect
 	golang.org/x/net v0.20.0 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	gopkg.in/ini.v1 v1.56.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 )
