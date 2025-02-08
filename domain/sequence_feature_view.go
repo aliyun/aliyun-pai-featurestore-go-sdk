@@ -316,3 +316,8 @@ func (f *SequenceFeatureView) RowCount(string) int {
 func (f *SequenceFeatureView) RowCountIds(string) ([]string, int, error) {
 	return nil, 0, nil
 }
+
+// ScanAndIterateData implements FeatureView.
+func (f *SequenceFeatureView) ScanAndIterateData(filter string, ch chan<- string) ([]string, error) {
+	return nil, errors.New("unimplemented")
+}

@@ -18,6 +18,7 @@ import (
 )
 
 type FeatureViewHologresDao struct {
+	UnimplementedFeatureViewDao
 	db              *sql.DB
 	table           string
 	primaryKeyField string
