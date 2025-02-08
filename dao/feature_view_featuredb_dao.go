@@ -1224,15 +1224,21 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 	}
 
 	alloc := memory.NewGoAllocator()
+	d.featureDBClient.AddressMutex.RLock()
+	currentAddress := d.featureDBClient.CurrentAddress
+	useVpcAddress := d.featureDBClient.UseVpcAddress
+	d.featureDBClient.AddressMutex.RUnlock()
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots/%s/scan",
-		d.address, d.database, d.schema, d.table, snapshotId), bytes.NewReader(nil))
+		currentAddress, d.database, d.schema, d.table, snapshotId), bytes.NewReader(nil))
 	if err != nil {
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", d.token)
+	if !useVpcAddress {
+		req.Header.Set("Authorization", d.featureDBClient.Token)
+	}
 	req.Header.Set("Auth", d.signature)
-	response, err := d.featureDBClient.Do(req)
+	response, err := d.featureDBClient.Client.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1334,15 +1340,21 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 }
 
 func (d *FeatureViewFeatureDBDao) createSnapshot() (string, int64, error) {
+	d.featureDBClient.AddressMutex.RLock()
+	currentAddress := d.featureDBClient.CurrentAddress
+	useVpcAddress := d.featureDBClient.UseVpcAddress
+	d.featureDBClient.AddressMutex.RUnlock()
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots",
-		d.address, d.database, d.schema, d.table), bytes.NewReader(nil))
+		currentAddress, d.database, d.schema, d.table), bytes.NewReader(nil))
 	if err != nil {
 		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", d.token)
+	if !useVpcAddress {
+		req.Header.Set("Authorization", d.featureDBClient.Token)
+	}
 	req.Header.Set("Auth", d.signature)
-	response, err := d.featureDBClient.Do(req)
+	response, err := d.featureDBClient.Client.Do(req)
 	if err != nil {
 		return "", 0, err
 	}
@@ -1444,15 +1456,21 @@ func (d *FeatureViewFeatureDBDao) ScanAndIterateData(filter string, ch chan<- st
 			alloc := memory.NewGoAllocator()
 			for {
 				time.Sleep(time.Second * 5)
+				d.featureDBClient.AddressMutex.RLock()
+				currentAddress := d.featureDBClient.CurrentAddress
+				useVpcAddress := d.featureDBClient.UseVpcAddress
+				d.featureDBClient.AddressMutex.RUnlock()
 				req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/iterate_get_kv?ts=%d",
-					d.address, d.database, d.schema, d.table, ts), bytes.NewReader(nil))
+					currentAddress, d.database, d.schema, d.table, ts), bytes.NewReader(nil))
 				if err != nil {
 					continue
 				}
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Authorization", d.token)
+				if !useVpcAddress {
+					req.Header.Set("Authorization", d.featureDBClient.Token)
+				}
 				req.Header.Set("Auth", d.signature)
-				response, err := d.featureDBClient.Do(req)
+				response, err := d.featureDBClient.Client.Do(req)
 				if err != nil {
 					continue
 				}
