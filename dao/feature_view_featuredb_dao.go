@@ -86,7 +86,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 	if d.signature == "" {
 		return result, errors.New("FeatureStore DB username and password are not entered, please enter them by adding client.LoginFeatureStoreDB(username, password)")
 	}
-	if d.featureDBClient.CurrentAddress == "" || d.featureDBClient.Token == "" {
+	if d.featureDBClient.GetCurrentAddress(false) == "" || d.featureDBClient.Token == "" {
 		return result, errors.New("FeatureDB datasource has not been created")
 	}
 
@@ -105,11 +105,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				pkeys = append(pkeys, utils.ToString(k, ""))
 			}
 			body, _ := json.Marshal(map[string]any{"keys": pkeys})
-			d.featureDBClient.AddressMutex.RLock()
-			currentAddress := d.featureDBClient.CurrentAddress
-			useVpcAddress := d.featureDBClient.UseVpcAddress
-			d.featureDBClient.AddressMutex.RUnlock()
-			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", currentAddress, d.database, d.schema, d.table, len(pkeys))
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table, len(pkeys))
 			requestBody := readerPool.Get().(*bytes.Reader)
 			defer readerPool.Put(requestBody)
 			requestBody.Reset(body)
@@ -119,33 +115,21 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				return
 			}
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
-			if !useVpcAddress {
-				req.Header.Set("Authorization", d.featureDBClient.Token)
-			}
 
 			response, err := d.featureDBClient.Client.Do(req)
 			if err != nil {
-				if useVpcAddress {
-					d.featureDBClient.CheckVpcAddress(3)
-					d.featureDBClient.AddressMutex.RLock()
-					currentAddress = d.featureDBClient.CurrentAddress
-					useVpcAddress = d.featureDBClient.UseVpcAddress
-					d.featureDBClient.AddressMutex.RUnlock()
-					url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", currentAddress, d.database, d.schema, d.table, len(pkeys))
-					req, err = http.NewRequest("POST", url, requestBody)
-					if err != nil {
-						errChan <- err
-						return
-					}
-					req.Header.Set("Content-Type", "application/json")
-					if !useVpcAddress {
-						req.Header.Set("Authorization", d.featureDBClient.Token)
-					}
-					req.Header.Set("Auth", d.signature)
-					response, err = d.featureDBClient.Client.Do(req)
+				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table, len(pkeys))
+				req, err = http.NewRequest("POST", url, requestBody)
+				if err != nil {
+					errChan <- err
+					return
 				}
-
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", d.featureDBClient.Token)
+				req.Header.Set("Auth", d.signature)
+				response, err = d.featureDBClient.Client.Do(req)
 				if err != nil {
 					errChan <- err
 					return
@@ -731,43 +715,28 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			Length: seqLen,
 		}
 		body, _ := json.Marshal(request)
-		d.featureDBClient.AddressMutex.RLock()
-		currentAddress := d.featureDBClient.CurrentAddress
-		useVpcAddress := d.featureDBClient.UseVpcAddress
-		d.featureDBClient.AddressMutex.RUnlock()
-		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", currentAddress, d.database, d.schema, d.table)
+		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
 		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 		if err != nil {
 			errChan <- err
 			return nil
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", d.featureDBClient.Token)
 		req.Header.Set("Auth", d.signature)
-		if !useVpcAddress {
-			req.Header.Set("Authorization", d.featureDBClient.Token)
-		}
 
 		response, err := d.featureDBClient.Client.Do(req)
 		if err != nil {
-			if useVpcAddress {
-				d.featureDBClient.CheckVpcAddress(3)
-				d.featureDBClient.AddressMutex.RLock()
-				currentAddress = d.featureDBClient.CurrentAddress
-				useVpcAddress = d.featureDBClient.UseVpcAddress
-				d.featureDBClient.AddressMutex.RUnlock()
-				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", currentAddress, d.database, d.schema, d.table)
-				req, err = http.NewRequest("POST", url, bytes.NewReader(body))
-				if err != nil {
-					errChan <- err
-					return nil
-				}
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Auth", d.signature)
-				if !useVpcAddress {
-					req.Header.Set("Authorization", d.featureDBClient.Token)
-				}
-				response, err = d.featureDBClient.Client.Do(req)
+			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
+			req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+			if err != nil {
+				errChan <- err
+				return nil
 			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", d.featureDBClient.Token)
+			req.Header.Set("Auth", d.signature)
+			response, err = d.featureDBClient.Client.Do(req)
 
 			if err != nil {
 				errChan <- err
@@ -930,42 +899,28 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 				WithValue: true,
 			}
 			body, _ := json.Marshal(request)
-			d.featureDBClient.AddressMutex.RLock()
-			currentAddress := d.featureDBClient.CurrentAddress
-			useVpcAddress := d.featureDBClient.UseVpcAddress
-			d.featureDBClient.AddressMutex.RUnlock()
-			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", currentAddress, d.database, d.schema, d.table)
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
 			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
 			}
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
-			if !useVpcAddress {
-				req.Header.Set("Authorization", d.featureDBClient.Token)
-			}
+
 			response, err = d.featureDBClient.Client.Do(req)
 			if err != nil {
-				if useVpcAddress {
-					d.featureDBClient.CheckVpcAddress(3)
-					d.featureDBClient.AddressMutex.RLock()
-					currentAddress = d.featureDBClient.CurrentAddress
-					useVpcAddress = d.featureDBClient.UseVpcAddress
-					d.featureDBClient.AddressMutex.RUnlock()
-					url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", currentAddress, d.database, d.schema, d.table)
-					req, err = http.NewRequest("POST", url, bytes.NewReader(body))
-					if err != nil {
-						errChan <- err
-						return nil
-					}
-					req.Header.Set("Content-Type", "application/json")
-					req.Header.Set("Auth", d.signature)
-					if !useVpcAddress {
-						req.Header.Set("Authorization", d.featureDBClient.Token)
-					}
-					response, err = d.featureDBClient.Client.Do(req)
+				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
+				req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+				if err != nil {
+					errChan <- err
+					return nil
 				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", d.featureDBClient.Token)
+				req.Header.Set("Auth", d.signature)
+				response, err = d.featureDBClient.Client.Do(req)
 				if err != nil {
 					errChan <- err
 					return nil
@@ -981,42 +936,28 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 				WithValue: true,
 			}
 			body, _ := json.Marshal(request)
-			d.featureDBClient.AddressMutex.RLock()
-			currentAddress := d.featureDBClient.CurrentAddress
-			useVpcAddress := d.featureDBClient.UseVpcAddress
-			d.featureDBClient.AddressMutex.RUnlock()
-			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", currentAddress, d.database, d.schema, d.table)
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
 			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
 			}
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
-			if !useVpcAddress {
-				req.Header.Set("Authorization", d.featureDBClient.Token)
-			}
+
 			response, err = d.featureDBClient.Client.Do(req)
 			if err != nil {
-				if useVpcAddress {
-					d.featureDBClient.CheckVpcAddress(3)
-					d.featureDBClient.AddressMutex.RLock()
-					currentAddress = d.featureDBClient.CurrentAddress
-					useVpcAddress = d.featureDBClient.UseVpcAddress
-					d.featureDBClient.AddressMutex.RUnlock()
-					url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", currentAddress, d.database, d.schema, d.table)
-					req, err = http.NewRequest("POST", url, bytes.NewReader(body))
-					if err != nil {
-						errChan <- err
-						return nil
-					}
-					req.Header.Set("Content-Type", "application/json")
-					req.Header.Set("Auth", d.signature)
-					if !useVpcAddress {
-						req.Header.Set("Authorization", d.featureDBClient.Token)
-					}
-					response, err = d.featureDBClient.Client.Do(req)
+				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
+				req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+				if err != nil {
+					errChan <- err
+					return nil
 				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", d.featureDBClient.Token)
+				req.Header.Set("Auth", d.signature)
+				response, err = d.featureDBClient.Client.Do(req)
 				if err != nil {
 					errChan <- err
 					return nil
@@ -1224,19 +1165,13 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 	}
 
 	alloc := memory.NewGoAllocator()
-	d.featureDBClient.AddressMutex.RLock()
-	currentAddress := d.featureDBClient.CurrentAddress
-	useVpcAddress := d.featureDBClient.UseVpcAddress
-	d.featureDBClient.AddressMutex.RUnlock()
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots/%s/scan",
-		currentAddress, d.database, d.schema, d.table, snapshotId), bytes.NewReader(nil))
+		d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table, snapshotId), bytes.NewReader(nil))
 	if err != nil {
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if !useVpcAddress {
-		req.Header.Set("Authorization", d.featureDBClient.Token)
-	}
+	req.Header.Set("Authorization", d.featureDBClient.Token)
 	req.Header.Set("Auth", d.signature)
 	response, err := d.featureDBClient.Client.Do(req)
 	if err != nil {
@@ -1340,19 +1275,13 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 }
 
 func (d *FeatureViewFeatureDBDao) createSnapshot() (string, int64, error) {
-	d.featureDBClient.AddressMutex.RLock()
-	currentAddress := d.featureDBClient.CurrentAddress
-	useVpcAddress := d.featureDBClient.UseVpcAddress
-	d.featureDBClient.AddressMutex.RUnlock()
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots",
-		currentAddress, d.database, d.schema, d.table), bytes.NewReader(nil))
+		d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table), bytes.NewReader(nil))
 	if err != nil {
 		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if !useVpcAddress {
-		req.Header.Set("Authorization", d.featureDBClient.Token)
-	}
+	req.Header.Set("Authorization", d.featureDBClient.Token)
 	req.Header.Set("Auth", d.signature)
 	response, err := d.featureDBClient.Client.Do(req)
 	if err != nil {
@@ -1456,19 +1385,13 @@ func (d *FeatureViewFeatureDBDao) ScanAndIterateData(filter string, ch chan<- st
 			alloc := memory.NewGoAllocator()
 			for {
 				time.Sleep(time.Second * 5)
-				d.featureDBClient.AddressMutex.RLock()
-				currentAddress := d.featureDBClient.CurrentAddress
-				useVpcAddress := d.featureDBClient.UseVpcAddress
-				d.featureDBClient.AddressMutex.RUnlock()
 				req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/iterate_get_kv?ts=%d",
-					currentAddress, d.database, d.schema, d.table, ts), bytes.NewReader(nil))
+					d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table, ts), bytes.NewReader(nil))
 				if err != nil {
 					continue
 				}
 				req.Header.Set("Content-Type", "application/json")
-				if !useVpcAddress {
-					req.Header.Set("Authorization", d.featureDBClient.Token)
-				}
+				req.Header.Set("Authorization", d.featureDBClient.Token)
 				req.Header.Set("Auth", d.signature)
 				response, err := d.featureDBClient.Client.Do(req)
 				if err != nil {

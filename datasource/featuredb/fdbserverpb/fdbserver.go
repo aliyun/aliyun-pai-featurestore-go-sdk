@@ -21,42 +21,27 @@ func BatchWriteBloomKV(project *domain.Project, featureView domain.FeatureView, 
 	if err != nil {
 		return err
 	}
-	fdbClient.AddressMutex.RLock()
-	currentAddress := fdbClient.CurrentAddress
-	useVpcAddress := fdbClient.UseVpcAddress
-	fdbClient.AddressMutex.RUnlock()
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/bloom_write",
-		currentAddress, project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
+		fdbClient.GetCurrentAddress(false), project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fdbClient.Token)
 	req.Header.Set("Auth", project.Signature)
-	if !useVpcAddress {
-		req.Header.Set("Authorization", fdbClient.Token)
-	}
 
 	response, err := fdbClient.Client.Do(req)
 	if err != nil {
-		if useVpcAddress {
-			fdbClient.CheckVpcAddress(3)
-			fdbClient.AddressMutex.RLock()
-			currentAddress = fdbClient.CurrentAddress
-			useVpcAddress = fdbClient.UseVpcAddress
-			fdbClient.AddressMutex.RUnlock()
-			req, err = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/bloom_write",
-				currentAddress, project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Auth", project.Signature)
-			if !useVpcAddress {
-				req.Header.Set("Authorization", fdbClient.Token)
-			}
-			response, err = fdbClient.Client.Do(req)
+		req, err = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/bloom_write",
+			fdbClient.GetCurrentAddress(true), project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
+		if err != nil {
+			return err
 		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fdbClient.Token)
+		req.Header.Set("Auth", project.Signature)
+		response, err = fdbClient.Client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -96,41 +81,26 @@ func TestBloomItems(project *domain.Project, featureView domain.FeatureView, req
 		return nil, err
 	}
 
-	fdbClient.AddressMutex.RLock()
-	currentAddress := fdbClient.CurrentAddress
-	useVpcAddress := fdbClient.UseVpcAddress
-	fdbClient.AddressMutex.RUnlock()
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/test_bloom_items",
-		currentAddress, project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
+		fdbClient.GetCurrentAddress(false), project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fdbClient.Token)
 	req.Header.Set("Auth", project.Signature)
-	if !useVpcAddress {
-		req.Header.Set("Authorization", fdbClient.Token)
-	}
 
 	response, err := fdbClient.Client.Do(req)
 	if err != nil {
-		if useVpcAddress {
-			fdbClient.CheckVpcAddress(3)
-			fdbClient.AddressMutex.RLock()
-			currentAddress = fdbClient.CurrentAddress
-			useVpcAddress = fdbClient.UseVpcAddress
-			fdbClient.AddressMutex.RUnlock()
-			req, err = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/test_bloom_items",
-				currentAddress, project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
-			if err != nil {
-				return nil, err
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Auth", project.Signature)
-			if !useVpcAddress {
-				req.Header.Set("Authorization", fdbClient.Token)
-			}
-			response, err = fdbClient.Client.Do(req)
+		req, err = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/test_bloom_items",
+			fdbClient.GetCurrentAddress(true), project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
+		if err != nil {
+			return nil, err
 		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fdbClient.Token)
+		req.Header.Set("Auth", project.Signature)
+		response, err = fdbClient.Client.Do(req)
 		if err != nil {
 			return nil, err
 		}
@@ -161,41 +131,26 @@ func DeleteBloomByKey(project *domain.Project, featureView domain.FeatureView, k
 		return err
 	}
 
-	fdbClient.AddressMutex.RLock()
-	currentAddress := fdbClient.CurrentAddress
-	useVpcAddress := fdbClient.UseVpcAddress
-	fdbClient.AddressMutex.RUnlock()
 	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/delete_bloom_key?key=%s",
-		currentAddress, project.InstanceId, project.ProjectName, featureView.GetName(), key), nil)
+		fdbClient.GetCurrentAddress(false), project.InstanceId, project.ProjectName, featureView.GetName(), key), nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fdbClient.Token)
 	req.Header.Set("Auth", project.Signature)
-	if !useVpcAddress {
-		req.Header.Set("Authorization", fdbClient.Token)
-	}
 
 	response, err := fdbClient.Client.Do(req)
 	if err != nil {
-		if useVpcAddress {
-			fdbClient.CheckVpcAddress(3)
-			fdbClient.AddressMutex.RLock()
-			currentAddress = fdbClient.CurrentAddress
-			useVpcAddress = fdbClient.UseVpcAddress
-			fdbClient.AddressMutex.RUnlock()
-			req, err = http.NewRequest("DELETE", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/delete_bloom_key?key=%s",
-				currentAddress, project.InstanceId, project.ProjectName, featureView.GetName(), key), nil)
-			if err != nil {
-				return err
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Auth", project.Signature)
-			if !useVpcAddress {
-				req.Header.Set("Authorization", fdbClient.Token)
-			}
-			response, err = fdbClient.Client.Do(req)
+		req, err = http.NewRequest("DELETE", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/delete_bloom_key?key=%s",
+			fdbClient.GetCurrentAddress(true), project.InstanceId, project.ProjectName, featureView.GetName(), key), nil)
+		if err != nil {
+			return err
 		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", fdbClient.Token)
+		req.Header.Set("Auth", project.Signature)
+		response, err = fdbClient.Client.Do(req)
 		if err != nil {
 			return err
 		}

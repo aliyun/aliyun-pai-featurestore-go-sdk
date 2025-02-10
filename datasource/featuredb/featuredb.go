@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,11 +14,9 @@ type FeatureDBClient struct {
 	Token      string
 	vpcAddress string
 
-	CurrentAddress string
-	UseVpcAddress  bool
-	AddressMutex   sync.RWMutex
-	checkInterval  time.Duration
-	stopChan       chan struct{}
+	useVpcAddress atomic.Bool
+	checkInterval time.Duration
+	stopChan      chan struct{}
 }
 
 var (
@@ -43,18 +41,18 @@ func InitFeatureDBClient(address, token, vpcAddress string) {
 		},
 	}
 	featureDBClient = &FeatureDBClient{
-		Client:         client,
-		address:        address,
-		Token:          token,
-		vpcAddress:     fmt.Sprintf("http://%s", vpcAddress),
-		CurrentAddress: address,
-		UseVpcAddress:  false,
-		checkInterval:  1 * time.Minute,
-		stopChan:       make(chan struct{}),
+		Client:        client,
+		address:       address,
+		Token:         token,
+		vpcAddress:    fmt.Sprintf("http://%s", vpcAddress),
+		checkInterval: 1 * time.Minute,
+		stopChan:      make(chan struct{}),
 	}
 
+	featureDBClient.useVpcAddress.Store(false)
+
 	if vpcAddress != "" {
-		featureDBClient.CheckVpcAddress(1)
+		featureDBClient.CheckVpcAddress()
 
 		go featureDBClient.backgroundCheckVpcAddress()
 	}
@@ -76,33 +74,39 @@ func (f *FeatureDBClient) backgroundCheckVpcAddress() {
 		case <-f.stopChan:
 			return
 		case <-ticker.C:
-			f.CheckVpcAddress(1)
+			f.CheckVpcAddress()
 		}
 	}
 }
 
-func (f *FeatureDBClient) CheckVpcAddress(maxTryCount int) {
+func (f *FeatureDBClient) CheckVpcAddress() {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/health", f.vpcAddress), nil)
 	if err == nil {
 		req.Header.Set("Content-Type", "application/json")
-		retryCount := 0
-		for retryCount < maxTryCount {
-			resp, err := f.Client.Do(req)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				f.AddressMutex.Lock()
-				f.CurrentAddress = f.vpcAddress
-				f.UseVpcAddress = true
-				f.AddressMutex.Unlock()
-				return
-			}
-			retryCount++
+		resp, err := f.Client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			f.useVpcAddress.Store(true)
+			return
 		}
 	}
 
-	f.AddressMutex.Lock()
-	f.CurrentAddress = f.address
-	f.UseVpcAddress = false
-	f.AddressMutex.Unlock()
+	f.useVpcAddress.Store(false)
+}
+
+func (f *FeatureDBClient) GetCurrentAddress(check bool) string {
+	if f.vpcAddress == "" {
+		return f.address
+	}
+
+	if check {
+		f.CheckVpcAddress()
+	}
+
+	if f.useVpcAddress.Load() {
+		return f.vpcAddress
+	} else {
+		return f.address
+	}
 }
 
 func (f *FeatureDBClient) Stop() {
