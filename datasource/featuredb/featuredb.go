@@ -81,13 +81,20 @@ func (f *FeatureDBClient) backgroundCheckVpcAddress() {
 
 func (f *FeatureDBClient) CheckVpcAddress() {
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/health", f.vpcAddress), nil)
-	if err == nil {
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := f.Client.Do(req)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			f.useVpcAddress.Store(true)
-			return
-		}
+	if err != nil {
+		f.useVpcAddress.Store(false)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := f.Client.Do(req)
+	if err != nil {
+		f.useVpcAddress.Store(false)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		f.useVpcAddress.Store(true)
+		return
 	}
 
 	f.useVpcAddress.Store(false)
