@@ -16,6 +16,7 @@ type Datasource struct {
 	WorkspaceId   string `json:"workspace_id"`
 	VpcAddress    string `json:"vpc_address,omitempty"`
 	PublicAddress string `json:"public_address,omitempty"`
+	FdbVpcAddress string `json:"fdb_vpc_address,omitempty"`
 	Project       string `json:"project,omitempty"`
 	Database      string `json:"database,omitempty"`
 	Token         string `json:"token,omitempty"`

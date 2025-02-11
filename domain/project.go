@@ -71,7 +71,7 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 	}
 
 	if p.FeatureDBAddress != "" && p.FeatureDBToken != "" {
-		featuredb.InitFeatureDBClient(p.FeatureDBAddress, p.FeatureDBToken)
+		featuredb.InitFeatureDBClient(p.FeatureDBAddress, p.FeatureDBToken, p.FeatureDBVpcAddress)
 	}
 
 	return &project

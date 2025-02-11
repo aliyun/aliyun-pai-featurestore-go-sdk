@@ -43,12 +43,10 @@ func init() {
 
 type FeatureViewFeatureDBDao struct {
 	UnimplementedFeatureViewDao
-	featureDBClient *http.Client
+	featureDBClient *featuredb.FeatureDBClient
 	database        string
 	schema          string
 	table           string
-	address         string
-	token           string
 	fieldTypeMap    map[string]constants.FSType
 	fields          []string
 	signature       string
@@ -70,10 +68,7 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		return nil
 	}
 
-	dao.featureDBClient = client.Client
-
-	dao.address = client.Address
-	dao.token = client.Token
+	dao.featureDBClient = client
 
 	return &dao
 }
@@ -91,7 +86,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 	if d.signature == "" {
 		return result, errors.New("FeatureStore DB username and password are not entered, please enter them by adding client.LoginFeatureStoreDB(username, password)")
 	}
-	if d.address == "" || d.token == "" {
+	if d.featureDBClient.GetCurrentAddress(false) == "" || d.featureDBClient.Token == "" {
 		return result, errors.New("FeatureDB datasource has not been created")
 	}
 
@@ -110,23 +105,35 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				pkeys = append(pkeys, utils.ToString(k, ""))
 			}
 			body, _ := json.Marshal(map[string]any{"keys": pkeys})
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table, len(pkeys))
 			requestBody := readerPool.Get().(*bytes.Reader)
 			defer readerPool.Put(requestBody)
 			requestBody.Reset(body)
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=",
-				d.address, d.database, d.schema, d.table, len(pkeys)), requestBody)
+			req, err := http.NewRequest("POST", url, requestBody)
 			if err != nil {
 				errChan <- err
 				return
 			}
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", d.token)
+			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
 
-			response, err := d.featureDBClient.Do(req)
+			response, err := d.featureDBClient.Client.Do(req)
 			if err != nil {
-				errChan <- err
-				return
+				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table, len(pkeys))
+				req, err = http.NewRequest("POST", url, requestBody)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", d.featureDBClient.Token)
+				req.Header.Set("Auth", d.signature)
+				response, err = d.featureDBClient.Client.Do(req)
+				if err != nil {
+					errChan <- err
+					return
+				}
 			}
 			defer response.Body.Close() // 确保关闭response.Body
 			// 检查状态码
@@ -708,20 +715,33 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			Length: seqLen,
 		}
 		body, _ := json.Marshal(request)
-		req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv",
-			d.address, d.database, d.schema, d.table), bytes.NewReader(body))
+		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
+		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 		if err != nil {
 			errChan <- err
 			return nil
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", d.token)
+		req.Header.Set("Authorization", d.featureDBClient.Token)
 		req.Header.Set("Auth", d.signature)
 
-		response, err := d.featureDBClient.Do(req)
+		response, err := d.featureDBClient.Client.Do(req)
 		if err != nil {
-			errChan <- err
-			return nil
+			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
+			req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+			if err != nil {
+				errChan <- err
+				return nil
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", d.featureDBClient.Token)
+			req.Header.Set("Auth", d.signature)
+			response, err = d.featureDBClient.Client.Do(req)
+
+			if err != nil {
+				errChan <- err
+				return nil
+			}
 		}
 		defer response.Body.Close() // 确保关闭response.Body
 		// 检查状态码
@@ -879,19 +899,32 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 				WithValue: true,
 			}
 			body, _ := json.Marshal(request)
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv",
-				d.address, d.database, d.schema, d.table), bytes.NewReader(body))
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
+			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
 			}
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", d.token)
+			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
-			response, err = d.featureDBClient.Do(req)
+
+			response, err = d.featureDBClient.Client.Do(req)
 			if err != nil {
-				errChan <- err
-				return nil
+				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
+				req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+				if err != nil {
+					errChan <- err
+					return nil
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", d.featureDBClient.Token)
+				req.Header.Set("Auth", d.signature)
+				response, err = d.featureDBClient.Client.Do(req)
+				if err != nil {
+					errChan <- err
+					return nil
+				}
 			}
 		} else {
 			pks := make([]string, 0, len(events))
@@ -903,19 +936,32 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 				WithValue: true,
 			}
 			body, _ := json.Marshal(request)
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv",
-				d.address, d.database, d.schema, d.table), bytes.NewReader(body))
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
+			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
 			}
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", d.token)
+			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
-			response, err = d.featureDBClient.Do(req)
+
+			response, err = d.featureDBClient.Client.Do(req)
 			if err != nil {
-				errChan <- err
-				return nil
+				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
+				req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+				if err != nil {
+					errChan <- err
+					return nil
+				}
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", d.featureDBClient.Token)
+				req.Header.Set("Auth", d.signature)
+				response, err = d.featureDBClient.Client.Do(req)
+				if err != nil {
+					errChan <- err
+					return nil
+				}
 			}
 		}
 
@@ -1120,14 +1166,14 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 
 	alloc := memory.NewGoAllocator()
 	req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots/%s/scan",
-		d.address, d.database, d.schema, d.table, snapshotId), bytes.NewReader(nil))
+		d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table, snapshotId), bytes.NewReader(nil))
 	if err != nil {
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", d.token)
+	req.Header.Set("Authorization", d.featureDBClient.Token)
 	req.Header.Set("Auth", d.signature)
-	response, err := d.featureDBClient.Do(req)
+	response, err := d.featureDBClient.Client.Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1230,14 +1276,14 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 
 func (d *FeatureViewFeatureDBDao) createSnapshot() (string, int64, error) {
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots",
-		d.address, d.database, d.schema, d.table), bytes.NewReader(nil))
+		d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table), bytes.NewReader(nil))
 	if err != nil {
 		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", d.token)
+	req.Header.Set("Authorization", d.featureDBClient.Token)
 	req.Header.Set("Auth", d.signature)
-	response, err := d.featureDBClient.Do(req)
+	response, err := d.featureDBClient.Client.Do(req)
 	if err != nil {
 		return "", 0, err
 	}
@@ -1340,14 +1386,14 @@ func (d *FeatureViewFeatureDBDao) ScanAndIterateData(filter string, ch chan<- st
 			for {
 				time.Sleep(time.Second * 5)
 				req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/iterate_get_kv?ts=%d",
-					d.address, d.database, d.schema, d.table, ts), bytes.NewReader(nil))
+					d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table, ts), bytes.NewReader(nil))
 				if err != nil {
 					continue
 				}
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Authorization", d.token)
+				req.Header.Set("Authorization", d.featureDBClient.Token)
 				req.Header.Set("Auth", d.signature)
-				response, err := d.featureDBClient.Do(req)
+				response, err := d.featureDBClient.Client.Do(req)
 				if err != nil {
 					continue
 				}
