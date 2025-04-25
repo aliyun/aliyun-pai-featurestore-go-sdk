@@ -4,6 +4,7 @@ import (
 	"unicode/utf8"
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	"github.com/aliyun/credentials-go/credentials"
 
 	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v4/client"
 )
@@ -77,8 +78,22 @@ func NewAPIClient(cfg *Configuration) (*APIClient, error) {
 	if cfg.Token != "" {
 		config.SecurityToken = &cfg.Token
 	}
+	var (
+		client *paifeaturestore.Client
+		err    error
+	)
+	if cfg.AccessKeyId == "" || cfg.AccessKeySecret == "" {
+		credential, err1 := credentials.NewCredential(nil)
+		if err1 != nil {
+			return nil, err1
+		}
 
-	client, err := paifeaturestore.NewClient(config)
+		config.Credential = credential
+		client, err = paifeaturestore.NewClient(config)
+	} else {
+		client, err = paifeaturestore.NewClient(config)
+	}
+
 	if err != nil {
 		return nil, err
 	}
