@@ -59,6 +59,12 @@ func WithFeatureDBLogin(username, password string) ClientOption {
 	}
 }
 
+func WithHologresLogin(username, password string) ClientOption {
+	return func(e *FeatureStoreClient) {
+		e.hologresAuth = username + ":" + password
+	}
+}
+
 func WithHologresPublicAddress(hologresPublicAddress string) ClientOption {
 	return func(e *FeatureStoreClient) {
 		e.hologresPublicAddress = hologresPublicAddress
@@ -107,6 +113,9 @@ type FeatureStoreClient struct {
 
 	// signature to get data from featurestore db
 	signature string
+
+	// hologres authorization info
+	hologresAuth string
 
 	// custom hologres public address (including port num)
 	hologresPublicAddress string
@@ -235,6 +244,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 		p.OnlineDataSource.Ak = ak
 		p.OnlineDataSource.TestMode = c.testMode
 		p.OnlineDataSource.HologresPrefix = c.hologresPrefix
+		p.OnlineDataSource.HologresAuth = c.hologresAuth
 
 		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId, c.hologresPort, c.hologresPublicAddress)
 		if err != nil {

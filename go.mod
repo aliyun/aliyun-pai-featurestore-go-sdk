@@ -9,6 +9,7 @@ require (
 	github.com/aliyun/aliyun-igraph-go-sdk v0.0.0-20221208132745-defc68e1b227
 	github.com/aliyun/aliyun-odps-go-sdk/arrow v0.0.1
 	github.com/aliyun/aliyun-tablestore-go-sdk v1.7.7
+	github.com/aliyun/credentials-go v1.4.6
 	github.com/antihax/optional v1.0.0
 	github.com/expr-lang/expr v1.16.9
 	github.com/go-redis/redis/v8 v8.11.5
@@ -28,7 +29,6 @@ require (
 	github.com/alibabacloud-go/tea-utils v1.3.1 // indirect
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.6 // indirect
 	github.com/alibabacloud-go/tea-xml v1.1.3 // indirect
-	github.com/aliyun/credentials-go v1.4.6 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/clbanning/mxj/v2 v2.5.5 // indirect
