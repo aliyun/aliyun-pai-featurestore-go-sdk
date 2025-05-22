@@ -121,6 +121,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 			response, err := d.featureDBClient.Client.Do(req)
 			if err != nil {
 				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table, len(pkeys))
+				requestBody.Reset(body)
 				req, err = http.NewRequest("POST", url, requestBody)
 				if err != nil {
 					errChan <- err
