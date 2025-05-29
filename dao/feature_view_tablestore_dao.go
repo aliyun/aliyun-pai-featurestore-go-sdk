@@ -111,7 +111,16 @@ func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields 
 						newMap[pkValue.ColumnName] = pkValue.Value
 					}
 					for _, rowValue := range rowResult.Columns {
-						newMap[rowValue.ColumnName] = rowValue.Value
+						val := rowValue.Value
+						if d.fieldTypeMap[rowValue.ColumnName] == constants.FS_TIMESTAMP {
+							timeVal, err := time.ParseInLocation("2006-01-02 15:04:05", val.(string), time.Local)
+							if err != nil {
+								log.Println(err)
+							} else {
+								val = timeVal
+							}
+						}
+						newMap[rowValue.ColumnName] = val
 					}
 					mu.Lock()
 					result = append(result, newMap)
