@@ -21,6 +21,8 @@ func ColumnValues(columns []*sql.ColumnType) []interface{} {
 			values[i] = &sql.NullInt32{}
 		case "DOUBLE", "FLOAT", "FLOAT8":
 			values[i] = &sql.NullFloat64{}
+		case "TIMESTAMPTZ":
+			values[i] = &sql.NullTime{}
 		default:
 			values[i] = &sql.NullString{}
 		}
