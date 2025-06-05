@@ -828,6 +828,9 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 	var outmu sync.Mutex
 
 	var wg sync.WaitGroup
+	cache := make(map[string][]*sequenceInfo)
+	cacheMu := sync.Mutex{}
+
 	for _, key := range keys {
 		wg.Add(1)
 		go func(key interface{}) {
@@ -840,15 +843,24 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				eventWg.Add(1)
 				go func(seqConfig *api.SeqConfig) {
 					defer eventWg.Done()
-					var onlineSequences []*sequenceInfo
-					var offlineSequences []*sequenceInfo
+					cacheKey := fmt.Sprintf("%s:%d:%v", seqConfig.SeqEvent, seqConfig.SeqLen, key)
+					cacheMu.Lock()
+					onlineSequences, found := cache[cacheKey]
+					cacheMu.Unlock()
 
-					// FeatureDB has processed the integration of online sequence features and offline sequence features
-					// Here we put the results into onlineSequences
+					if !found {
+						if onlineresult := fetchDataFunc(seqConfig.SeqEvent, seqConfig.SeqLen, key); onlineresult != nil {
+							onlineSequences = onlineresult
+						}
 
-					if onlineresult := fetchDataFunc(seqConfig.SeqEvent, seqConfig.SeqLen, key); onlineresult != nil {
-						onlineSequences = onlineresult
+						cacheMu.Lock()
+						cache[cacheKey] = onlineSequences
+						cacheMu.Unlock()
 					}
+
+					var offlineSequences []*sequenceInfo
+					// FeatureDB has processed the integration of online sequence features and offline sequence features
+					// Here we only put the results into onlineSequences
 
 					subproperties := makeSequenceFeatures(offlineSequences, onlineSequences, seqConfig, sequenceConfig, currTime)
 					mu.Lock()
