@@ -226,7 +226,7 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 	if f.userIdField != f.FeatureEntity.FeatureEntityJoinid {
 		for _, sequencefeatureMap := range sequenceFeatureResults {
 			sequencefeatureMap[f.FeatureEntity.FeatureEntityJoinid] = sequencefeatureMap[f.userIdField]
-			delete(sequencefeatureMap, f.userIdField)
+			// delete(sequencefeatureMap, f.userIdField)
 		}
 	}
 
@@ -266,7 +266,7 @@ func (f *SequenceFeatureView) GetBehaviorFeatures(userIds []interface{}, events 
 	if f.userIdField != f.FeatureEntity.FeatureEntityJoinid {
 		for _, behaviorFeatureMap := range behaviorFeatureResult {
 			behaviorFeatureMap[f.FeatureEntity.FeatureEntityJoinid] = behaviorFeatureMap[f.userIdField]
-			delete(behaviorFeatureMap, f.userIdField)
+			// delete(behaviorFeatureMap, f.userIdField)
 		}
 	}
 

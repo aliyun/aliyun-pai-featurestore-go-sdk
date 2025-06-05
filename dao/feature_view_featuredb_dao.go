@@ -231,6 +231,10 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 									strBytes := make([]byte, length)
 									binary.Read(innerReader, binary.LittleEndian, &strBytes)
 									properties[field] = string(strBytes)
+								case constants.FS_TIMESTAMP:
+									var timeMilli int64
+									binary.Read(innerReader, binary.LittleEndian, &timeMilli)
+									properties[field] = time.UnixMilli(timeMilli)
 								case constants.FS_ARRAY_INT32:
 									var length uint32
 									binary.Read(innerReader, binary.LittleEndian, &length)
@@ -518,6 +522,8 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 									var length uint32
 									binary.Read(innerReader, binary.LittleEndian, &length)
 									skipBytes = int(length)
+								case constants.FS_TIMESTAMP:
+									skipBytes = 8
 								case constants.FS_ARRAY_INT32:
 									var length uint32
 									binary.Read(innerReader, binary.LittleEndian, &length)
