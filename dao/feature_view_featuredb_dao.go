@@ -827,10 +827,12 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 	results := make([]map[string]interface{}, 0, len(keys))
 	var outmu sync.Mutex
 
+	seqConfigsMap := make(map[string][]*api.SeqConfig)
+	for _, seqConfig := range onlineConfig {
+		mapKey := fmt.Sprintf("%s:%d", seqConfig.SeqEvent, seqConfig.SeqLen)
+		seqConfigsMap[mapKey] = append(seqConfigsMap[mapKey], seqConfig)
+	}
 	var wg sync.WaitGroup
-	cache := make(map[string][]*sequenceInfo)
-	cacheMu := sync.Mutex{}
-
 	for _, key := range keys {
 		wg.Add(1)
 		go func(key interface{}) {
@@ -839,36 +841,32 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			var mu sync.Mutex
 
 			var eventWg sync.WaitGroup
-			for _, seqConfig := range onlineConfig {
+			for _, seqConfigs := range seqConfigsMap {
+				if len(seqConfigs) == 0 {
+					continue
+				}
 				eventWg.Add(1)
-				go func(seqConfig *api.SeqConfig) {
+				go func(seqConfigs []*api.SeqConfig) {
 					defer eventWg.Done()
-					cacheKey := fmt.Sprintf("%s:%d:%v", seqConfig.SeqEvent, seqConfig.SeqLen, key)
-					cacheMu.Lock()
-					onlineSequences, found := cache[cacheKey]
-					cacheMu.Unlock()
-
-					if !found {
-						if onlineresult := fetchDataFunc(seqConfig.SeqEvent, seqConfig.SeqLen, key); onlineresult != nil {
-							onlineSequences = onlineresult
-						}
-
-						cacheMu.Lock()
-						cache[cacheKey] = onlineSequences
-						cacheMu.Unlock()
-					}
-
+					var onlineSequences []*sequenceInfo
 					var offlineSequences []*sequenceInfo
-					// FeatureDB has processed the integration of online sequence features and offline sequence features
-					// Here we only put the results into onlineSequences
 
-					subproperties := makeSequenceFeatures(offlineSequences, onlineSequences, seqConfig, sequenceConfig, currTime)
-					mu.Lock()
-					defer mu.Unlock()
-					for k, value := range subproperties {
-						properties[k] = value
+					// FeatureDB has processed the integration of online sequence features and offline sequence features
+					// Here we put the results into onlineSequences
+
+					if onlineresult := fetchDataFunc(seqConfigs[0].SeqEvent, seqConfigs[0].SeqLen, key); onlineresult != nil {
+						onlineSequences = onlineresult
 					}
-				}(seqConfig)
+
+					for _, seqConfig := range seqConfigs {
+						subproperties := makeSequenceFeatures(offlineSequences, onlineSequences, seqConfig, sequenceConfig, currTime)
+						mu.Lock()
+						for k, value := range subproperties {
+							properties[k] = value
+						}
+						mu.Unlock()
+					}
+				}(seqConfigs)
 			}
 			eventWg.Wait()
 
