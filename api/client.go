@@ -55,6 +55,8 @@ type APIClient struct {
 	FeatureViewApi *FeatureViewApiService
 
 	FsModelApi *FsModelApiService
+
+	LabelTableApi *LabelTableApiService
 }
 
 type service struct {
@@ -108,6 +110,7 @@ func NewAPIClient(cfg *Configuration) (*APIClient, error) {
 	c.FeatureEntityApi = (*FeatureEntityApiService)(&c.common)
 	c.FeatureViewApi = (*FeatureViewApiService)(&c.common)
 	c.FsModelApi = (*FsModelApiService)(&c.common)
+	c.LabelTableApi = (*LabelTableApiService)(&c.common)
 
 	return c, nil
 }

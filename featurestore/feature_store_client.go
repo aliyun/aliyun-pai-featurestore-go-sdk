@@ -333,6 +333,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 
 		pagenumber = 1
 		// get model
+		labelTableMap := make(map[string]*domain.LabelTable)
 		for {
 			listModelsResponse, err := c.client.FsModelApi.ListModels(pagesize, pagenumber, strconv.Itoa(project.ProjectId))
 			if err != nil {
@@ -347,7 +348,19 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 					return err
 				}
 				model := getModelResponse.Model
-				modelDomain := domain.NewModel(model, project)
+				var labelTableDomain *domain.LabelTable
+				if labelTable, exists := labelTableMap[model.LabelDatasourceTable]; !exists || labelTable == nil {
+					getLabelTableResponse, err := c.client.LabelTableApi.GetLabelTableByID(strconv.Itoa(model.LabelTableId))
+					if err != nil {
+						c.logError(fmt.Errorf("get label table error, err=%v", err))
+						return err
+					}
+					labelTableDomain = domain.NewLabelTable(getLabelTableResponse.LabelTable)
+					labelTableMap[model.LabelDatasourceTable] = labelTableDomain
+				} else {
+					labelTableDomain = labelTable
+				}
+				modelDomain := domain.NewModel(model, project, labelTableDomain)
 				project.ModelMap[model.Name] = modelDomain
 
 			}
