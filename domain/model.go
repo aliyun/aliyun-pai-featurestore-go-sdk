@@ -17,12 +17,14 @@ type Model struct {
 	aliasNamesMap           map[string]map[string]string      // featureview : alias names
 	featureEntityJoinIdMap  map[string]map[string]FeatureView // feature entity joinid : featureviews
 	featureEntityJoinIdList []string
+	labelTable              *LabelTable
 }
 
-func NewModel(model *api.Model, p *Project) *Model {
+func NewModel(model *api.Model, p *Project, lt *LabelTable) *Model {
 	m := &Model{
 		Model:                  model,
 		project:                p,
+		labelTable:             lt,
 		featureViewMap:         make(map[string]FeatureView),
 		featureEntityMap:       make(map[string]*FeatureEntity),
 		featureNamesMap:        make(map[string][]string),
@@ -177,4 +179,8 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 
 func (m *Model) GetLabelPriorityLevel() int {
 	return m.LabelPriorityLevel
+}
+
+func (m *Model) GetLabelTable() *LabelTable {
+	return m.labelTable
 }

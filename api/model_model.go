@@ -6,6 +6,7 @@ type Model struct {
 	ProjectName          string           `json:"project_name,omitempty"`
 	Name                 string           `json:"name"`
 	Owner                string           `json:"owner"`
+	LabelTableId         int              `json:"label_table_id"`
 	LabelDatasourceId    int              `json:"label_datasource_id,omitempty"`
 	LabelDatasourceTable string           `json:"label_datasource_table"`
 	LabelEventTime       string           `json:"label_event_time"`

@@ -35,12 +35,16 @@ func (a *FsModelApiService) GetModelByID(modelId string) (GetModelResponse, erro
 
 	mid, _ := strconv.Atoi(modelId)
 	model := Model{
-		ModelId:     mid,
-		ProjectName: *response.Body.ProjectName,
-		Name:        *response.Body.Name,
+		ModelId:              mid,
+		ProjectName:          *response.Body.ProjectName,
+		Name:                 *response.Body.Name,
+		LabelDatasourceTable: *response.Body.LabelTableName,
 	}
 	if id, err := strconv.Atoi(*response.Body.ProjectId); err == nil {
 		model.ProjectId = id
+	}
+	if id, err := strconv.Atoi(*response.Body.LabelTableId); err == nil {
+		model.LabelTableId = id
 	}
 	if response.Body.LabelPriorityLevel != nil {
 		model.LabelPriorityLevel = int(*response.Body.LabelPriorityLevel)
