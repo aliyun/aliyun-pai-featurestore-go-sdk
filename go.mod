@@ -15,6 +15,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/google/flatbuffers v2.0.8+incompatible
+	github.com/google/uuid v1.6.0
 	github.com/huandu/go-sqlbuilder v1.21.0
 	github.com/lib/pq v1.10.9
 	google.golang.org/protobuf v1.33.0
