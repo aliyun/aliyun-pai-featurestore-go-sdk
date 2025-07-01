@@ -15,10 +15,6 @@ concurrency:
 jobs:
   featuredb-unit-test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        try: [1, 2]  # 模拟最多三次尝试
     timeout-minutes: 5
     steps:
       - name: Checkout code
