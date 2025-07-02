@@ -8,14 +8,13 @@ on:
     branches:
       - '**'
 
-concurrency:
-  group: ci-pipeline
-  cancel-in-progress: false
-
 jobs:
   featuredb-unit-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    concurrency:
+      group: ci-featuredb-pipeline
+      cancel-in-progress: false
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -25,7 +24,7 @@ jobs:
         with:
           go-version: '1.23.0'
         
-      - name: Run unit tests
+      - name: Run featuredb unit tests
         env:
           ACCESS_ID: ${{ secrets.SDK_ACCESS_ID }}
           ACCESS_KEY: ${{ secrets.SDK_ACCESS_KEY }}
@@ -36,4 +35,48 @@ jobs:
           FEATURE_SERVICE_TOKEN: ${{ secrets.FEATURE_SERVICE_TOKEN }}
         run:
           go test -v -count=1 ./tests/test_cases/featuredb_test.go
+  hologres-unit-test:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-hologres-pipeline
+      cancel-in-progress: false
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23.0'
+        
+      - name: Run hologres unit tests
+        env:
+          ACCESS_ID: ${{ secrets.SDK_ACCESS_ID }}
+          ACCESS_KEY: ${{ secrets.SDK_ACCESS_KEY }}
+          SDK_INSTANCE_ID: ${{ secrets.SDK_INSTANCE_ID }}
+        run:
+          go test -v -count=1 ./tests/test_cases/hologres_test.go
+  tablestore-unit-test:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-tablestore-pipeline
+      cancel-in-progress: false
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23.0'
+        
+      - name: Run tablestore unit tests
+        env:
+          ACCESS_ID: ${{ secrets.SDK_ACCESS_ID }}
+          ACCESS_KEY: ${{ secrets.SDK_ACCESS_KEY }}
+          SDK_INSTANCE_ID: ${{ secrets.SDK_INSTANCE_ID }}
+        run:
+          go test -v -count=1 ./tests/test_cases/tablestore_test.go
   
