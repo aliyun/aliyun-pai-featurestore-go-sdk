@@ -5,19 +5,7 @@ import (
 )
 
 type DaoConfig struct {
-	DatasourceType      string
-	RedisName           string
-	RedisPrefix         string
-	RedisDefaultKey     string
-	RedisValueDelimeter string
-	MysqlName           string
-	MysqlTableName      string
-	Config              string
-	HBasePrefix         string
-	HBaseName           string
-	HBaseTable          string
-	ColumnFamily        string
-	Qualifier           string
+	DatasourceType string
 
 	PrimaryKeyField string
 	EventTimeField  string
@@ -31,17 +19,6 @@ type DaoConfig struct {
 	TableStoreName      string
 	TableStoreTableName string
 
-	// clickhouse
-	ClickHouseName      string
-	ClickHouseTableName string
-
-	// be engine
-	BeName               string
-	BizName              string
-	BeTableName          string
-	BeExposureUserIdName string
-	BeExposureItemIdName string
-
 	// igraph
 	IGraphName        string
 	GroupName         string
@@ -49,10 +26,10 @@ type DaoConfig struct {
 	SaveOriginalField bool
 
 	FieldMap map[string]string
-	// redis, tablestore, featuredb
+	// tablestore, featuredb
 	FieldTypeMap map[string]constants.FSType
 
-	// redis, featuredb
+	// featuredb
 	Fields []string
 
 	// hologres sequence tables
