@@ -38,6 +38,7 @@ func InitFeatureDBClient(address, token, vpcAddress string) {
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
 			ResponseHeaderTimeout: 500 * time.Millisecond,
+			IdleConnTimeout:       90 * time.Second,
 		},
 	}
 	featureDBClient = &FeatureDBClient{
