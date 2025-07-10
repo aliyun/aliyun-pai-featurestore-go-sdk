@@ -12,8 +12,6 @@ require (
 	github.com/aliyun/credentials-go v1.4.6
 	github.com/antihax/optional v1.0.0
 	github.com/expr-lang/expr v1.16.9
-	github.com/go-redis/redis/v8 v8.11.5
-	github.com/go-sql-driver/mysql v1.7.1
 	github.com/google/flatbuffers v2.0.8+incompatible
 	github.com/huandu/go-sqlbuilder v1.21.0
 	github.com/lib/pq v1.10.9
@@ -30,9 +28,7 @@ require (
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.6 // indirect
 	github.com/alibabacloud-go/tea-xml v1.1.3 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
-	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/clbanning/mxj/v2 v2.5.5 // indirect
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/go-kit/kit v0.12.0 // indirect
 	github.com/go-kit/log v0.2.0 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect

@@ -44,12 +44,8 @@ func (d *UnimplementedFeatureViewDao) ScanAndIterateData(filter string, ch chan<
 func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 	if config.DatasourceType == constants.Datasource_Type_Hologres {
 		return NewFeatureViewHologresDao(config)
-	} else if config.DatasourceType == constants.Datasource_Type_Mysql {
-		return NewFeatureViewMysqlDao(config)
 	} else if config.DatasourceType == constants.Datasource_Type_IGraph {
 		return NewFeatureViewIGraphDao(config)
-	} else if config.DatasourceType == constants.Datasource_Type_Redis {
-		return NewFeatureViewRedisDao(config)
 	} else if config.DatasourceType == constants.Datasource_Type_TableStore {
 		return NewFeatureViewTableStoreDao(config)
 	} else if config.DatasourceType == constants.Datasource_Type_FeatureDB {
