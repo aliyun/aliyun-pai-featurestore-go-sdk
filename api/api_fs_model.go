@@ -179,3 +179,40 @@ func (a *FsModelApiService) ListModels(pagesize, pagenumber int, projectId strin
 	localVarReturnValue.Models = models
 	return localVarReturnValue, nil
 }
+
+func (a *FsModelApiService) ListModelsByName(pagesize, pagenumber int, projectId, modelName string) (ListModelsResponse, error) {
+	var (
+		localVarReturnValue ListModelsResponse
+	)
+
+	request := paifeaturestore.ListModelFeaturesRequest{}
+	request.SetPageSize(int32(pagesize))
+	request.SetPageNumber(int32(pagenumber))
+	request.SetProjectId(projectId)
+	request.SetName(modelName)
+
+	response, err := a.client.ListModelFeatures(&a.client.instanceId, &request)
+	if err != nil {
+		return localVarReturnValue, err
+	}
+
+	localVarReturnValue.TotalCount = int(*response.Body.TotalCount)
+	var models []*Model
+	for _, modelFeature := range response.Body.ModelFeatures {
+		if id, err := strconv.Atoi(*modelFeature.ModelFeatureId); err == nil {
+			model := Model{
+				ModelId:     id,
+				Name:        *modelFeature.Name,
+				ProjectName: *modelFeature.ProjectName,
+			}
+			if id, err := strconv.Atoi(*modelFeature.ProjectId); err == nil {
+				model.ProjectId = id
+			}
+
+			models = append(models, &model)
+		}
+	}
+
+	localVarReturnValue.Models = models
+	return localVarReturnValue, nil
+}

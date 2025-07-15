@@ -171,7 +171,7 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 		return nil, err
 	}
 
-	if err = client.LoadProjectData(); err != nil {
+	if err = client.lazyLoadProjectData(); err != nil {
 		return nil, err
 	}
 
@@ -373,6 +373,95 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 
 		}
 
+	}
+
+	if len(projectData) > 0 {
+		c.projectMap = projectData
+	}
+
+	return nil
+}
+
+func (c *FeatureStoreClient) lazyLoadProjectData() error {
+	ak := api.Ak{
+		AccesskeyId:     c.client.GetConfig().AccessKeyId,
+		AccesskeySecret: c.client.GetConfig().AccessKeySecret,
+	}
+	if c.client.GetConfig().Token != "" {
+		ak.SecurityToken = c.client.GetConfig().Token
+	}
+	projectData := make(map[string]*domain.Project, 0)
+
+	listProjectsResponse, err := c.client.FsProjectApi.ListProjects()
+	if err != nil {
+		c.logError(fmt.Errorf("list projects error, err=%v", err))
+		return err
+	}
+
+	for _, p := range listProjectsResponse.Projects {
+		if p.ProjectName != c.client.GetConfig().ProjectName {
+			continue
+		}
+		// get datasource
+		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId, c.hologresPort, c.hologresPublicAddress)
+		if err != nil {
+			c.logError(fmt.Errorf("get datasource error, err=%v", err))
+			return err
+		}
+
+		p.OnlineDataSource = getDataSourceResponse.Datasource
+		p.OnlineDataSource.Ak = ak
+		p.OnlineDataSource.TestMode = c.testMode
+		p.OnlineDataSource.HologresPrefix = c.hologresPrefix
+		p.OnlineDataSource.HologresAuth = c.hologresAuth
+
+		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId, c.hologresPort, c.hologresPublicAddress)
+		if err != nil {
+			c.logError(fmt.Errorf("get datasource error, err=%v", err))
+			return err
+		}
+
+		p.OfflineDataSource = getDataSourceResponse.Datasource
+		p.OfflineDataSource.Ak = ak
+		p.OfflineDataSource.TestMode = c.testMode
+
+		// get featuredb datasource
+		p.FeatureDBAddress, p.FeatureDBToken, p.FeatureDBVpcAddress, err = c.client.DatasourceApi.GetFeatureDBDatasourceInfo(c.testMode, p.OfflineDataSource.WorkspaceId)
+		if err != nil {
+			c.logError(fmt.Errorf("get featuredb datasource, err=%v", err))
+			return err
+		}
+
+		p.Signature = c.signature
+
+		project := domain.NewProject(p, c.datasourceInitClient)
+		project.SetApiClient(c.client)
+		projectData[project.ProjectName] = project
+
+		var (
+			pagesize   = 100
+			pagenumber = 1
+		)
+
+		// get feature entities
+		for {
+			listFeatureEntitiesResponse, err := c.client.FeatureEntityApi.ListFeatureEntities(int32(pagesize), int32(pagenumber), strconv.Itoa(p.ProjectId))
+			if err != nil {
+				c.logError(fmt.Errorf("list feature entities error, err=%v", err))
+				return err
+			}
+
+			for _, entity := range listFeatureEntitiesResponse.FeatureEntities {
+				project.FeatureEntityMap[entity.FeatureEntityName] = domain.NewFeatureEntity(entity)
+			}
+
+			if len(listFeatureEntitiesResponse.FeatureEntities) == 0 || pagesize*pagenumber > listFeatureEntitiesResponse.TotalCount {
+				break
+			}
+
+			pagenumber++
+
+		}
 	}
 
 	if len(projectData) > 0 {
