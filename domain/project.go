@@ -29,6 +29,7 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 		FeatureViewMap:   make(map[string]FeatureView),
 		FeatureEntityMap: make(map[string]*FeatureEntity),
 		ModelMap:         make(map[string]*Model),
+		LabelTableMap:    make(map[int]*LabelTable),
 	}
 
 	switch p.OnlineDatasourceType {
