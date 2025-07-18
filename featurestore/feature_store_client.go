@@ -266,6 +266,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 		p.Signature = c.signature
 
 		project := domain.NewProject(p, c.datasourceInitClient)
+		project.SetApiClient(c.client)
 		projectData[project.ProjectName] = project
 
 		var (
@@ -319,7 +320,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 				}
 
 				featureViewDomain := domain.NewFeatureView(featureView, project, project.FeatureEntityMap[featureView.FeatureEntityName])
-				project.FeatureViewMap[featureView.Name] = featureViewDomain
+				project.FeatureViewMap.Store(featureView.Name, featureViewDomain)
 
 			}
 
@@ -333,7 +334,6 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 
 		pagenumber = 1
 		// get model
-		labelTableMap := make(map[string]*domain.LabelTable)
 		for {
 			listModelsResponse, err := c.client.FsModelApi.ListModels(pagesize, pagenumber, strconv.Itoa(project.ProjectId))
 			if err != nil {
@@ -348,20 +348,13 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 					return err
 				}
 				model := getModelResponse.Model
-				var labelTableDomain *domain.LabelTable
-				if labelTable, exists := labelTableMap[model.LabelDatasourceTable]; !exists || labelTable == nil {
-					getLabelTableResponse, err := c.client.LabelTableApi.GetLabelTableByID(strconv.Itoa(model.LabelTableId))
-					if err != nil {
-						c.logError(fmt.Errorf("get label table error, err=%v", err))
-						return err
-					}
-					labelTableDomain = domain.NewLabelTable(getLabelTableResponse.LabelTable)
-					labelTableMap[model.LabelDatasourceTable] = labelTableDomain
-				} else {
-					labelTableDomain = labelTable
+				labelTable := project.GetLabelTable(model.LabelTableId)
+				if labelTable == nil {
+					c.logError(fmt.Errorf("not found label table, labelTableId:%d", model.LabelTableId))
+					return fmt.Errorf("not found label table, labelTableId:%d", model.LabelTableId)
 				}
-				modelDomain := domain.NewModel(model, project, labelTableDomain)
-				project.ModelMap[model.Name] = modelDomain
+				modelDomain := domain.NewModel(model, project, labelTable)
+				project.ModelMap.Store(model.Name, modelDomain)
 
 			}
 
@@ -472,6 +465,16 @@ func (c *FeatureStoreClient) lazyLoadProjectData() error {
 }
 
 func (c *FeatureStoreClient) loopLoadProjectData() {
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Println("Recovered from panic:", r)
+			}
+		}()
+
+		c.LoadProjectData()
+	}()
+
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {

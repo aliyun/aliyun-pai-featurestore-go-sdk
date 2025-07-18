@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
@@ -15,10 +16,10 @@ import (
 type Project struct {
 	*api.Project
 	OnlineStore      OnlineStore
-	FeatureViewMap   map[string]FeatureView
+	FeatureViewMap   sync.Map
 	FeatureEntityMap map[string]*FeatureEntity
-	ModelMap         map[string]*Model
-	LabelTableMap    map[int]*LabelTable
+	ModelMap         sync.Map
+	LabelTableMap    sync.Map
 
 	apiClient *api.APIClient
 }
@@ -26,10 +27,7 @@ type Project struct {
 func NewProject(p *api.Project, isInitClient bool) *Project {
 	project := Project{
 		Project:          p,
-		FeatureViewMap:   make(map[string]FeatureView),
 		FeatureEntityMap: make(map[string]*FeatureEntity),
-		ModelMap:         make(map[string]*Model),
-		LabelTableMap:    make(map[int]*LabelTable),
 	}
 
 	switch p.OnlineDatasourceType {
@@ -89,14 +87,16 @@ func (p *Project) SetApiClient(apiClient *api.APIClient) {
 }
 
 func (p *Project) GetFeatureView(name string) FeatureView {
-	if _, exists := p.FeatureViewMap[name]; !exists {
-		err := p.loadFeatureView(name)
-		if err != nil {
-			return nil
-		}
+	if value, exists := p.FeatureViewMap.Load(name); exists {
+		return value.(FeatureView)
 	}
-
-	return p.FeatureViewMap[name]
+	if err := p.loadFeatureView(name); err != nil {
+		return nil
+	}
+	if value, exists := p.FeatureViewMap.Load(name); exists {
+		return value.(FeatureView)
+	}
+	return nil
 }
 
 func (p *Project) GetFeatureEntity(name string) *FeatureEntity {
@@ -104,35 +104,41 @@ func (p *Project) GetFeatureEntity(name string) *FeatureEntity {
 }
 
 func (p *Project) GetLabelTable(labelTableId int) *LabelTable {
-	if _, exists := p.LabelTableMap[labelTableId]; !exists {
-		err := p.loadLabelTable(labelTableId)
-		if err != nil {
-			return nil
-		}
+	if value, exists := p.LabelTableMap.Load(labelTableId); exists {
+		return value.(*LabelTable)
 	}
-
-	return p.LabelTableMap[labelTableId]
+	if err := p.loadLabelTable(labelTableId); err != nil {
+		return nil
+	}
+	if value, exists := p.LabelTableMap.Load(labelTableId); exists {
+		return value.(*LabelTable)
+	}
+	return nil
 }
 
 func (p *Project) GetModel(name string) *Model {
-	if _, exists := p.ModelMap[name]; !exists {
-		err := p.loadModelFeature(name)
-		if err != nil {
-			return nil
-		}
+	if value, exists := p.ModelMap.Load(name); exists {
+		return value.(*Model)
 	}
-
-	return p.ModelMap[name]
+	if err := p.loadModelFeature(name); err != nil {
+		return nil
+	}
+	if value, exists := p.ModelMap.Load(name); exists {
+		return value.(*Model)
+	}
+	return nil
 }
 func (p *Project) GetModelFeature(name string) *Model {
-	if _, exists := p.ModelMap[name]; !exists {
-		err := p.loadModelFeature(name)
-		if err != nil {
-			return nil
-		}
+	if value, exists := p.ModelMap.Load(name); exists {
+		return value.(*Model)
 	}
-
-	return p.ModelMap[name]
+	if err := p.loadModelFeature(name); err != nil {
+		return nil
+	}
+	if value, exists := p.ModelMap.Load(name); exists {
+		return value.(*Model)
+	}
+	return nil
 }
 
 func (p *Project) loadFeatureView(featureViewName string) error {
@@ -166,7 +172,7 @@ func (p *Project) loadFeatureView(featureViewName string) error {
 				return fmt.Errorf("feature entity not exist, name=%s", featureView.FeatureEntityName)
 			}
 			featureViewDomain := NewFeatureView(featureView, p, entity)
-			p.FeatureViewMap[featureView.Name] = featureViewDomain
+			p.FeatureViewMap.Store(featureView.Name, featureViewDomain)
 		}
 
 		if len(listFeatureViews.FeatureViews) == 0 || pageSize*pageNumber > listFeatureViews.TotalCount {
@@ -186,7 +192,7 @@ func (p *Project) loadLabelTable(labelTableId int) error {
 		return err
 	}
 	labelTableDomain := NewLabelTable(getLabelTableResponse.LabelTable)
-	p.LabelTableMap[labelTableId] = labelTableDomain
+	p.LabelTableMap.Store(labelTableId, labelTableDomain)
 
 	return nil
 }
@@ -207,17 +213,13 @@ func (p *Project) loadModelFeature(modelFeatureName string) error {
 				return err
 			}
 			model := getModelFeatureResponse.Model
-			var labelTableDomain *LabelTable
-			if _, exists := p.LabelTableMap[model.LabelTableId]; !exists {
-				err := p.loadLabelTable(model.LabelTableId)
-				if err != nil {
-					fmt.Printf("get label table error, err=%v", err)
-					return err
-				}
+			labelTableDomain := p.GetLabelTable(model.LabelTableId)
+			if labelTableDomain == nil {
+				fmt.Printf("label table not exist, id=%d", model.LabelTableId)
+				return fmt.Errorf("label table not exist, id=%d", model.LabelTableId)
 			}
-			labelTableDomain = p.LabelTableMap[model.LabelTableId]
 			modelDomain := NewModel(model, p, labelTableDomain)
-			p.ModelMap[model.Name] = modelDomain
+			p.ModelMap.Store(model.Name, modelDomain)
 		}
 
 		if len(listModelFeatures.Models) == 0 || pageSize*pageNumber > listModelFeatures.TotalCount {
