@@ -171,7 +171,7 @@ func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName s
 		return nil, err
 	}
 
-	if err = client.LoadProjectData(); err != nil {
+	if err = client.lazyLoadProjectData(); err != nil {
 		return nil, err
 	}
 
@@ -266,6 +266,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 		p.Signature = c.signature
 
 		project := domain.NewProject(p, c.datasourceInitClient)
+		project.SetApiClient(c.client)
 		projectData[project.ProjectName] = project
 
 		var (
@@ -319,7 +320,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 				}
 
 				featureViewDomain := domain.NewFeatureView(featureView, project, project.FeatureEntityMap[featureView.FeatureEntityName])
-				project.FeatureViewMap[featureView.Name] = featureViewDomain
+				project.FeatureViewMap.Store(featureView.Name, featureViewDomain)
 
 			}
 
@@ -333,7 +334,6 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 
 		pagenumber = 1
 		// get model
-		labelTableMap := make(map[string]*domain.LabelTable)
 		for {
 			listModelsResponse, err := c.client.FsModelApi.ListModels(pagesize, pagenumber, strconv.Itoa(project.ProjectId))
 			if err != nil {
@@ -348,20 +348,13 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 					return err
 				}
 				model := getModelResponse.Model
-				var labelTableDomain *domain.LabelTable
-				if labelTable, exists := labelTableMap[model.LabelDatasourceTable]; !exists || labelTable == nil {
-					getLabelTableResponse, err := c.client.LabelTableApi.GetLabelTableByID(strconv.Itoa(model.LabelTableId))
-					if err != nil {
-						c.logError(fmt.Errorf("get label table error, err=%v", err))
-						return err
-					}
-					labelTableDomain = domain.NewLabelTable(getLabelTableResponse.LabelTable)
-					labelTableMap[model.LabelDatasourceTable] = labelTableDomain
-				} else {
-					labelTableDomain = labelTable
+				labelTable := project.GetLabelTable(model.LabelTableId)
+				if labelTable == nil {
+					c.logError(fmt.Errorf("not found label table, labelTableId:%d", model.LabelTableId))
+					return fmt.Errorf("not found label table, labelTableId:%d", model.LabelTableId)
 				}
-				modelDomain := domain.NewModel(model, project, labelTableDomain)
-				project.ModelMap[model.Name] = modelDomain
+				modelDomain := domain.NewModel(model, project, labelTable)
+				project.ModelMap.Store(model.Name, modelDomain)
 
 			}
 
@@ -382,7 +375,106 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 	return nil
 }
 
+func (c *FeatureStoreClient) lazyLoadProjectData() error {
+	ak := api.Ak{
+		AccesskeyId:     c.client.GetConfig().AccessKeyId,
+		AccesskeySecret: c.client.GetConfig().AccessKeySecret,
+	}
+	if c.client.GetConfig().Token != "" {
+		ak.SecurityToken = c.client.GetConfig().Token
+	}
+	projectData := make(map[string]*domain.Project, 0)
+
+	listProjectsResponse, err := c.client.FsProjectApi.ListProjects()
+	if err != nil {
+		c.logError(fmt.Errorf("list projects error, err=%v", err))
+		return err
+	}
+
+	for _, p := range listProjectsResponse.Projects {
+		if p.ProjectName != c.client.GetConfig().ProjectName {
+			continue
+		}
+		// get datasource
+		getDataSourceResponse, err := c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OnlineDatasourceId, c.hologresPort, c.hologresPublicAddress)
+		if err != nil {
+			c.logError(fmt.Errorf("get datasource error, err=%v", err))
+			return err
+		}
+
+		p.OnlineDataSource = getDataSourceResponse.Datasource
+		p.OnlineDataSource.Ak = ak
+		p.OnlineDataSource.TestMode = c.testMode
+		p.OnlineDataSource.HologresPrefix = c.hologresPrefix
+		p.OnlineDataSource.HologresAuth = c.hologresAuth
+
+		getDataSourceResponse, err = c.client.DatasourceApi.DatasourceDatasourceIdGet(p.OfflineDatasourceId, c.hologresPort, c.hologresPublicAddress)
+		if err != nil {
+			c.logError(fmt.Errorf("get datasource error, err=%v", err))
+			return err
+		}
+
+		p.OfflineDataSource = getDataSourceResponse.Datasource
+		p.OfflineDataSource.Ak = ak
+		p.OfflineDataSource.TestMode = c.testMode
+
+		// get featuredb datasource
+		p.FeatureDBAddress, p.FeatureDBToken, p.FeatureDBVpcAddress, err = c.client.DatasourceApi.GetFeatureDBDatasourceInfo(c.testMode, p.OfflineDataSource.WorkspaceId)
+		if err != nil {
+			c.logError(fmt.Errorf("get featuredb datasource, err=%v", err))
+			return err
+		}
+
+		p.Signature = c.signature
+
+		project := domain.NewProject(p, c.datasourceInitClient)
+		project.SetApiClient(c.client)
+		projectData[project.ProjectName] = project
+
+		var (
+			pagesize   = 100
+			pagenumber = 1
+		)
+
+		// get feature entities
+		for {
+			listFeatureEntitiesResponse, err := c.client.FeatureEntityApi.ListFeatureEntities(int32(pagesize), int32(pagenumber), strconv.Itoa(p.ProjectId))
+			if err != nil {
+				c.logError(fmt.Errorf("list feature entities error, err=%v", err))
+				return err
+			}
+
+			for _, entity := range listFeatureEntitiesResponse.FeatureEntities {
+				project.FeatureEntityMap[entity.FeatureEntityName] = domain.NewFeatureEntity(entity)
+			}
+
+			if len(listFeatureEntitiesResponse.FeatureEntities) == 0 || pagesize*pagenumber > listFeatureEntitiesResponse.TotalCount {
+				break
+			}
+
+			pagenumber++
+
+		}
+	}
+
+	if len(projectData) > 0 {
+		c.projectMap = projectData
+	}
+
+	return nil
+}
+
 func (c *FeatureStoreClient) loopLoadProjectData() {
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Println("Recovered from panic:", r)
+			}
+		}()
+
+		c.LoadProjectData()
+	}()
+
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for {

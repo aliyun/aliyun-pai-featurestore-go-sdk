@@ -1,6 +1,10 @@
 package domain
 
 import (
+	"fmt"
+	"strconv"
+	"sync"
+
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
@@ -12,17 +16,18 @@ import (
 type Project struct {
 	*api.Project
 	OnlineStore      OnlineStore
-	FeatureViewMap   map[string]FeatureView
+	FeatureViewMap   sync.Map
 	FeatureEntityMap map[string]*FeatureEntity
-	ModelMap         map[string]*Model
+	ModelMap         sync.Map
+	LabelTableMap    sync.Map
+
+	apiClient *api.APIClient
 }
 
 func NewProject(p *api.Project, isInitClient bool) *Project {
 	project := Project{
 		Project:          p,
-		FeatureViewMap:   make(map[string]FeatureView),
 		FeatureEntityMap: make(map[string]*FeatureEntity),
-		ModelMap:         make(map[string]*Model),
 	}
 
 	switch p.OnlineDatasourceType {
@@ -77,17 +82,152 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 	return &project
 }
 
+func (p *Project) SetApiClient(apiClient *api.APIClient) {
+	p.apiClient = apiClient
+}
+
 func (p *Project) GetFeatureView(name string) FeatureView {
-	return p.FeatureViewMap[name]
+	if value, exists := p.FeatureViewMap.Load(name); exists {
+		return value.(FeatureView)
+	}
+	if err := p.loadFeatureView(name); err != nil {
+		return nil
+	}
+	if value, exists := p.FeatureViewMap.Load(name); exists {
+		return value.(FeatureView)
+	}
+	return nil
 }
 
 func (p *Project) GetFeatureEntity(name string) *FeatureEntity {
 	return p.FeatureEntityMap[name]
 }
 
+func (p *Project) GetLabelTable(labelTableId int) *LabelTable {
+	if value, exists := p.LabelTableMap.Load(labelTableId); exists {
+		return value.(*LabelTable)
+	}
+	if err := p.loadLabelTable(labelTableId); err != nil {
+		return nil
+	}
+	if value, exists := p.LabelTableMap.Load(labelTableId); exists {
+		return value.(*LabelTable)
+	}
+	return nil
+}
+
 func (p *Project) GetModel(name string) *Model {
-	return p.ModelMap[name]
+	if value, exists := p.ModelMap.Load(name); exists {
+		return value.(*Model)
+	}
+	if err := p.loadModelFeature(name); err != nil {
+		return nil
+	}
+	if value, exists := p.ModelMap.Load(name); exists {
+		return value.(*Model)
+	}
+	return nil
 }
 func (p *Project) GetModelFeature(name string) *Model {
-	return p.ModelMap[name]
+	if value, exists := p.ModelMap.Load(name); exists {
+		return value.(*Model)
+	}
+	if err := p.loadModelFeature(name); err != nil {
+		return nil
+	}
+	if value, exists := p.ModelMap.Load(name); exists {
+		return value.(*Model)
+	}
+	return nil
+}
+
+func (p *Project) loadFeatureView(featureViewName string) error {
+	pageNumber := 1
+	pageSize := 100
+	for {
+		listFeatureViews, err := p.apiClient.FeatureViewApi.ListFeatureViewsByName(int32(pageSize), int32(pageNumber), strconv.Itoa(p.ProjectId), featureViewName)
+		if err != nil {
+			fmt.Printf("list feature views error, err=%v", err)
+			return err
+		}
+		for _, view := range listFeatureViews.FeatureViews {
+			getFeatureViewResponse, err := p.apiClient.FeatureViewApi.GetFeatureViewByID(strconv.Itoa(int(view.FeatureViewId)))
+			if err != nil {
+				fmt.Printf("get feature view error, err=%v", err)
+				return err
+			}
+			featureView := getFeatureViewResponse.FeatureView
+			if featureView.RegisterDatasourceId > 0 {
+				getDataSourceResponse, err := p.apiClient.DatasourceApi.DatasourceDatasourceIdGet(featureView.RegisterDatasourceId, 0, "")
+				if err != nil {
+					fmt.Printf("get datasource error, err=%v", err)
+					return err
+				}
+				featureView.RegisterDataSource = getDataSourceResponse.Datasource
+			}
+
+			entity, exist := p.FeatureEntityMap[featureView.FeatureEntityName]
+			if !exist {
+				fmt.Printf("feature entity not exist, name=%s", featureView.FeatureEntityName)
+				return fmt.Errorf("feature entity not exist, name=%s", featureView.FeatureEntityName)
+			}
+			featureViewDomain := NewFeatureView(featureView, p, entity)
+			p.FeatureViewMap.Store(featureView.Name, featureViewDomain)
+		}
+
+		if len(listFeatureViews.FeatureViews) == 0 || pageSize*pageNumber > listFeatureViews.TotalCount {
+			break
+		}
+
+		pageNumber++
+	}
+
+	return nil
+}
+
+func (p *Project) loadLabelTable(labelTableId int) error {
+	getLabelTableResponse, err := p.apiClient.LabelTableApi.GetLabelTableByID(strconv.Itoa(labelTableId))
+	if err != nil {
+		fmt.Printf("get label table error, err=%v", err)
+		return err
+	}
+	labelTableDomain := NewLabelTable(getLabelTableResponse.LabelTable)
+	p.LabelTableMap.Store(labelTableId, labelTableDomain)
+
+	return nil
+}
+
+func (p *Project) loadModelFeature(modelFeatureName string) error {
+	pageNumber := 1
+	pageSize := 100
+	for {
+		listModelFeatures, err := p.apiClient.FsModelApi.ListModelsByName(pageSize, pageNumber, strconv.Itoa(p.ProjectId), modelFeatureName)
+		if err != nil {
+			fmt.Printf("list model features error, err=%v", err)
+			return err
+		}
+		for _, m := range listModelFeatures.Models {
+			getModelFeatureResponse, err := p.apiClient.FsModelApi.GetModelByID(strconv.Itoa(m.ModelId))
+			if err != nil {
+				fmt.Printf("get model feature error, err=%v", err)
+				return err
+			}
+			model := getModelFeatureResponse.Model
+			labelTableDomain := p.GetLabelTable(model.LabelTableId)
+			if labelTableDomain == nil {
+				fmt.Printf("label table not exist, id=%d", model.LabelTableId)
+				return fmt.Errorf("label table not exist, id=%d", model.LabelTableId)
+			}
+			modelDomain := NewModel(model, p, labelTableDomain)
+			p.ModelMap.Store(model.Name, modelDomain)
+		}
+
+		if len(listModelFeatures.Models) == 0 || pageSize*pageNumber > listModelFeatures.TotalCount {
+			break
+		}
+
+		pageNumber++
+	}
+
+	return nil
 }

@@ -209,3 +209,48 @@ func (a *FeatureViewApiService) ListFeatureViews(pagesize, pagenumber int32, pro
 
 	return localVarReturnValue, nil
 }
+
+func (a *FeatureViewApiService) ListFeatureViewsByName(pagesize, pagenumber int32, projectId, featureViewName string) (ListFeatureViewsResponse, error) {
+	var (
+		localVarReturnValue ListFeatureViewsResponse
+	)
+
+	request := paifeaturestore.ListFeatureViewsRequest{}
+	request.SetPageSize(pagesize)
+	request.SetPageNumber(pagenumber)
+	request.SetProjectId(projectId)
+	request.SetName(featureViewName)
+
+	response, err := a.client.ListFeatureViews(&a.client.instanceId, &request)
+	if err != nil {
+		return localVarReturnValue, nil
+	}
+
+	localVarReturnValue.TotalCount = int(*response.Body.TotalCount)
+	var featureViews []*FeatureView
+
+	for _, view := range response.Body.FeatureViews {
+		if viewId, err := strconv.Atoi(*view.FeatureViewId); err == nil {
+			featureView := FeatureView{
+				FeatureViewId:     viewId,
+				Type:              *view.Type,
+				FeatureEntityName: *view.FeatureEntityName,
+				ProjectName:       *view.ProjectName,
+			}
+			if view.WriteToFeatureDB != nil {
+				featureView.WriteToFeatureDB = *view.WriteToFeatureDB
+			} else {
+				featureView.WriteToFeatureDB = false
+			}
+			if id, err := strconv.Atoi(*view.ProjectId); err == nil {
+				featureView.ProjectId = id
+			}
+
+			featureViews = append(featureViews, &featureView)
+		}
+	}
+
+	localVarReturnValue.FeatureViews = featureViews
+
+	return localVarReturnValue, nil
+}
