@@ -37,7 +37,8 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 		}
 		if isInitClient {
 			dsn := onlineStore.Datasource.GenerateDSN(constants.Datasource_Type_Hologres)
-			hologres.RegisterHologres(onlineStore.Name, dsn)
+			useCustomAuth := onlineStore.Datasource.HologresAuth != ""
+			hologres.RegisterHologres(onlineStore.Name, dsn, useCustomAuth)
 		}
 		project.OnlineStore = onlineStore
 	case constants.Datasource_Type_IGraph:

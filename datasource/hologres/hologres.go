@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -31,19 +32,26 @@ func (d HologresDriver) Open(name string) (driver.Conn, error) {
 }
 
 type Hologres struct {
-	DSN  string
-	DB   *sql.DB
-	Name string
+	DSN          string
+	DB           *sql.DB
+	Name         string
+	RegisterTime time.Time
 }
 
-var hologresInstances = make(map[string]*Hologres)
+var hologresInstances sync.Map
 
 func GetHologres(name string) (*Hologres, error) {
-	if _, ok := hologresInstances[name]; !ok {
+	value, ok := hologresInstances.Load(name)
+	if !ok {
 		return nil, fmt.Errorf("Hologres not found, name:%s", name)
 	}
 
-	return hologresInstances[name], nil
+	hologresInstance, ok := value.(*Hologres)
+	if !ok {
+		return nil, fmt.Errorf("Hologres not found, name:%s", name)
+	}
+
+	return hologresInstance, nil
 }
 func (m *Hologres) Init() error {
 	db, err := sql.Open("hologres", m.DSN)
@@ -61,25 +69,37 @@ func (m *Hologres) Init() error {
 	return err
 }
 
-func RegisterHologres(name, dsn string) {
-	if _, ok := hologresInstances[name]; ok {
-		return
+func RegisterHologres(name, dsn string, useCustomAuth bool) {
+	value, ok := hologresInstances.Load(name)
+	if ok {
+		if useCustomAuth {
+			return
+		}
+		hologresInstance, ok2 := value.(*Hologres)
+		if ok2 && time.Since(hologresInstance.RegisterTime) < 12*time.Hour {
+			return
+		}
 	}
 	m := &Hologres{
-		DSN:  dsn,
-		Name: name,
+		DSN:          dsn,
+		Name:         name,
+		RegisterTime: time.Now(),
 	}
 	err := m.Init()
 	if err != nil {
 		fmt.Printf("event=RegisterHologres\tdsn=%s\tname=%s", dsn, name)
 		panic(err)
 	}
-	hologresInstances[name] = m
+	hologresInstances.Store(name, m)
 
 }
 
 func RemoveHologres(name string) {
-	hologres, ok := hologresInstances[name]
+	value, ok := hologresInstances.Load(name)
+	if !ok {
+		return
+	}
+	hologres, ok := value.(*Hologres)
 	if !ok {
 		return
 	}
@@ -88,5 +108,5 @@ func RemoveHologres(name string) {
 		hologres.DB.Close()
 	}
 
-	delete(hologresInstances, name)
+	hologresInstances.Delete(name)
 }
