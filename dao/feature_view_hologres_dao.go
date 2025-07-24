@@ -121,10 +121,11 @@ func (d *FeatureViewHologresDao) GetFeatures(keys []interface{}, selectFields []
 }
 
 type sequenceInfo struct {
-	itemId    string
-	event     string
-	playTime  float64
-	timestamp int64
+	itemId                        string
+	event                         string
+	playTime                      float64
+	timestamp                     int64
+	onlineBehaviourTableFieldsMap map[string]string
 }
 
 func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {

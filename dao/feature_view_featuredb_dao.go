@@ -24,6 +24,7 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
+	flatbuffers "github.com/google/flatbuffers/go"
 )
 
 const (
@@ -703,13 +704,170 @@ type FeatureDBBatchGetKKVRequest struct {
 	WithValue bool     `json:"with_value"`
 }
 
+type IndexPair struct {
+	index  int
+	fsType constants.FSType
+}
+
+
+func readValueFromKKVData(data *fdbserverfb.KKVData, offset int, fsType constants.FSType) (interface{}, error) {
+
+	tab := data.Table()
+
+	// ValueInt32 - 读取 int32 值
+	valueInt32 := func(i int) int32 {
+		o := flatbuffers.UOffsetT(tab.Offset(12))
+		if o != 0 && i+4 <= data.ValueLength() {
+			a := tab.Vector(o)
+			return tab.GetInt32(a + flatbuffers.UOffsetT(i))
+		}
+		return 0
+	}
+
+	// ValueInt64 - 读取 int64 值
+	valueInt64 := func(i int) int64 {
+		o := flatbuffers.UOffsetT(tab.Offset(12))
+		if o != 0 && i+8 <= data.ValueLength() {
+			a := tab.Vector(o)
+			return tab.GetInt64(a + flatbuffers.UOffsetT(i))
+		}
+		return 0
+	}
+
+	// ValueFloat32 - 读取 float32 值
+	valueFloat32 := func(i int) float32 {
+		o := flatbuffers.UOffsetT(tab.Offset(12))
+		if o != 0 && i+4 <= data.ValueLength() {
+			a := tab.Vector(o)
+			return tab.GetFloat32(a + flatbuffers.UOffsetT(i))
+		}
+		return 0.0
+	}
+
+	// ValueFloat64 - 读取 float64 值
+	valueFloat64 := func(i int) float64 {
+		o := flatbuffers.UOffsetT(tab.Offset(12))
+		if o != 0 && i+8 <= data.ValueLength() {
+			a := tab.Vector(o)
+			return tab.GetFloat64(a + flatbuffers.UOffsetT(i))
+		}
+		return 0.0
+	}
+
+	// ValueBool - 读取 bool 值
+	valueBool := func(i int) bool {
+		o := flatbuffers.UOffsetT(tab.Offset(12))
+		if o != 0 && i+1 <= data.ValueLength() {
+			a := tab.Vector(o)
+			return tab.GetBool(a + flatbuffers.UOffsetT(i))
+		}
+		return false
+	}
+
+	// ValueString - 读取 string 值
+	valueString := func(i int) string {
+		o := flatbuffers.UOffsetT(tab.Offset(12))
+		if o != 0 && i+4 <= data.ValueLength() {
+			a := tab.Vector(o)
+			// 读取长度（uint32，4字节）
+			length := tab.GetUint32(a + flatbuffers.UOffsetT(i))
+
+			// 检查是否有足够的字节用于字符串数据
+			if i+4+int(length) <= data.ValueLength() {
+				strBytes := make([]byte, length)
+				for j := 0; j < int(length); j++ {
+					strBytes[j] = tab.GetByte(a + flatbuffers.UOffsetT(i+4+j))
+				}
+				return string(strBytes)
+			}
+		}
+		return ""
+	}
+
+	switch fsType {
+	case constants.FS_INT32:
+		if offset+4 <= data.ValueLength() {
+			value := valueInt32(offset)
+			return value, nil
+		}
+		return int32(0), fmt.Errorf("insufficient bytes for int32")
+
+	case constants.FS_INT64:
+		if offset+8 <= data.ValueLength() {
+			value := valueInt64(offset)
+			return value, nil
+		}
+		return int64(0), fmt.Errorf("insufficient bytes for int64")
+
+	case constants.FS_FLOAT:
+		if offset+4 <= data.ValueLength() {
+			value := valueFloat32(offset)
+			return value, nil
+		}
+		return float32(0), fmt.Errorf("insufficient bytes for float32")
+
+	case constants.FS_DOUBLE:
+		if offset+8 <= data.ValueLength() {
+			value := valueFloat64(offset)
+			return value, nil
+		}
+		return float64(0), fmt.Errorf("insufficient bytes for float64")
+
+	case constants.FS_BOOLEAN:
+		if offset+1 <= data.ValueLength() {
+			value := valueBool(offset)
+			return value, nil
+		}
+		return false, fmt.Errorf("insufficient bytes for boolean")
+
+	case constants.FS_STRING:
+		if offset+4 <= data.ValueLength() {
+			value := valueString(offset)
+			return value, nil
+		}
+		return "", fmt.Errorf("insufficient bytes for string")
+
+	default:
+		// 对于未知类型，尝试按字符串处理
+		if offset+4 <= data.ValueLength() {
+			value := valueString(offset)
+			return value, nil
+		}
+		return "", fmt.Errorf("unknown type or insufficient bytes")
+	}
+}
+
 func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 
+	seqConfigsMap := make(map[string][]*api.SeqConfig)
+
+	featureViewFieldsIndexMap := make(map[string]int)
+	featureViewFieldsTypeMap := make(map[string]constants.FSType)
+
+	seqConfigsBehaviorFieldsIndexTypeMap := make(map[string][][]IndexPair)
+
+	for i, field := range d.fields {
+		featureViewFieldsIndexMap[field] = i
+	}
+	for field, curType := range d.fieldTypeMap {
+		featureViewFieldsTypeMap[field] = curType
+	}
+	for _, seqConfig := range onlineConfig {
+		mapKey := fmt.Sprintf("%s:%d", seqConfig.SeqEvent, seqConfig.SeqLen)
+		seqConfigsMap[mapKey] = append(seqConfigsMap[mapKey], seqConfig)
+		curBehaviorFields := strings.Split(seqConfig.OnlineBehaviorTableFields, "\u0001")
+		curBehaviorFieldsIndexTypeList := make([]IndexPair, len(curBehaviorFields))
+		for _, field := range curBehaviorFields {
+			curBehaviorFieldsIndexTypeList = append(curBehaviorFieldsIndexTypeList, IndexPair{index: featureViewFieldsIndexMap[field], fsType: featureViewFieldsTypeMap[field]})
+		}
+		seqConfigsBehaviorFieldsIndexTypeMap[mapKey] = append(seqConfigsBehaviorFieldsIndexTypeMap[mapKey], curBehaviorFieldsIndexTypeList)
+	}
+
 	errChan := make(chan error, len(keys)*len(onlineConfig))
 
-	fetchDataFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
+	fetchDataFunc := func(seqEvent string, seqLen int, key interface{}, seqConfigsBehaviorFields []IndexPair) []*sequenceInfo {
 		sequences := []*sequenceInfo{}
 
 		events := strings.Split(seqEvent, "|")
@@ -768,6 +926,8 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 		}
 
 		reader := bufio.NewReader(response.Body)
+		innerReader := readerPool.Get().(*bytes.Reader)
+		defer readerPool.Put(innerReader)
 		for {
 			buf, err := deserialize(reader)
 			if err == io.EOF {
@@ -808,6 +968,8 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				seq.timestamp = kkv.EventTimestamp()
 				seq.playTime = kkv.PlayTime()
 
+				seq.onlineBehaviourTableFieldsMap = make(map[string]string)
+
 				if seq.event == "" || seq.itemId == "" {
 					continue
 				}
@@ -817,6 +979,19 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 					}
 				}
 
+				for _, field := range seqConfigsBehaviorFields {
+					// 将值转换为字符串存储在 seq.onlineBehaviourTableFieldsMap 中
+					if d.fields != nil && field.index < len(d.fields) {
+						fieldName := d.fields[field.index]
+						rawValue, err := readValueFromKKVData(kkv, field.index, field.fsType)
+						value := utils.ToString(rawValue, "")
+						if err != nil {
+							value = ""
+						}
+						seq.onlineBehaviourTableFieldsMap[fieldName] = value
+					}
+
+				}
 				sequences = append(sequences, seq)
 			}
 		}
@@ -827,11 +1002,6 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 	results := make([]map[string]interface{}, 0, len(keys))
 	var outmu sync.Mutex
 
-	seqConfigsMap := make(map[string][]*api.SeqConfig)
-	for _, seqConfig := range onlineConfig {
-		mapKey := fmt.Sprintf("%s:%d", seqConfig.SeqEvent, seqConfig.SeqLen)
-		seqConfigsMap[mapKey] = append(seqConfigsMap[mapKey], seqConfig)
-	}
 	var wg sync.WaitGroup
 	for _, key := range keys {
 		wg.Add(1)
@@ -841,9 +1011,13 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			var mu sync.Mutex
 
 			var eventWg sync.WaitGroup
-			for _, seqConfigs := range seqConfigsMap {
+			for k, seqConfigs := range seqConfigsMap {
 				if len(seqConfigs) == 0 {
 					continue
+				}
+				seqConfigsBehaviorFields := make([][]IndexPair, len(seqConfigs))
+				if curFields, exits := seqConfigsBehaviorFieldsIndexTypeMap[k]; exits {
+					seqConfigsBehaviorFields = curFields
 				}
 				eventWg.Add(1)
 				go func(seqConfigs []*api.SeqConfig) {
@@ -854,7 +1028,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 					// FeatureDB has processed the integration of online sequence features and offline sequence features
 					// Here we put the results into onlineSequences
 
-					if onlineresult := fetchDataFunc(seqConfigs[0].SeqEvent, seqConfigs[0].SeqLen, key); onlineresult != nil {
+					if onlineresult := fetchDataFunc(seqConfigs[0].SeqEvent, seqConfigs[0].SeqLen, key, seqConfigsBehaviorFields[0]); onlineresult != nil {
 						onlineSequences = onlineresult
 					}
 

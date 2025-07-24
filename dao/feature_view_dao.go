@@ -105,6 +105,9 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 				sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
 			}
 			sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
+			for k, v := range seq.onlineBehaviourTableFieldsMap {
+				sequencesValueMap[k] = append(sequencesValueMap[k], v)
+			}
 		}
 	}
 
