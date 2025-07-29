@@ -92,7 +92,7 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 
 	//produce seqeunce feature correspond to easyrec processor
 	sequencesValueMap := make(map[string][]string)
-	sequenceMap := make(map[string]bool, 0)
+	sequenceMap := make(map[string]bool)
 
 	for _, seq := range onlineSequences {
 		key := fmt.Sprintf("%s#%s", seq.itemId, seq.event)
