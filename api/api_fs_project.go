@@ -20,9 +20,11 @@ FsProjectApiService List Projects
 
 @return ListProjectsResponse
 */
-func (a *FsProjectApiService) ListProjects() (ListProjectsResponse, error) {
+func (a *FsProjectApiService) ListProjects(pagesize, pagenumber int32) (ListProjectsResponse, error) {
 	request := paifeaturestore.ListProjectsRequest{}
 	request.SetName(a.client.cfg.ProjectName)
+	request.SetPageSize(pagesize)
+	request.SetPageNumber(pagenumber)
 
 	response, err := a.client.ListProjects(&a.client.instanceId, &request)
 	var (
@@ -33,6 +35,7 @@ func (a *FsProjectApiService) ListProjects() (ListProjectsResponse, error) {
 		return localVarReturnValue, err
 	}
 
+	localVarReturnValue.TotalCount = int(*response.Body.TotalCount)
 	var projects []*Project
 	for _, projectItem := range response.Body.Projects {
 		if id, err := strconv.Atoi(*projectItem.ProjectId); err == nil {

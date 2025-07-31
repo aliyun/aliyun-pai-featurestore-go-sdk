@@ -1,5 +1,6 @@
 package api
 
 type ListProjectsResponse struct {
-	Projects []*Project `json:"data,omitempty"`
+	TotalCount int
+	Projects   []*Project
 }
