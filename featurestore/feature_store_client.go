@@ -223,13 +223,27 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 	}
 	projectData := make(map[string]*domain.Project, 0)
 
-	listProjectsResponse, err := c.client.FsProjectApi.ListProjects()
-	if err != nil {
-		c.logError(fmt.Errorf("list projects error, err=%v", err))
-		return err
+	var (
+		pagesize   = 100
+		pagenumber = 1
+	)
+	projects := make([]*api.Project, 0)
+	for {
+		listProjectsResponse, err := c.client.FsProjectApi.ListProjects(int32(pagesize), int32(pagenumber))
+		if err != nil {
+			c.logError(fmt.Errorf("list projects error, err=%v", err))
+			return err
+		}
+		projects = append(projects, listProjectsResponse.Projects...)
+
+		if len(listProjectsResponse.Projects) == 0 || pagesize*pagenumber > listProjectsResponse.TotalCount {
+			break
+		}
+
+		pagenumber++
 	}
 
-	for _, p := range listProjectsResponse.Projects {
+	for _, p := range projects {
 		if p.ProjectName != c.client.GetConfig().ProjectName {
 			continue
 		}
@@ -269,10 +283,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 		project.SetApiClient(c.client)
 		projectData[project.ProjectName] = project
 
-		var (
-			pagesize   = 100
-			pagenumber = 1
-		)
+		pagenumber = 1
 
 		// get feature entities
 		for {
@@ -385,13 +396,27 @@ func (c *FeatureStoreClient) lazyLoadProjectData() error {
 	}
 	projectData := make(map[string]*domain.Project, 0)
 
-	listProjectsResponse, err := c.client.FsProjectApi.ListProjects()
-	if err != nil {
-		c.logError(fmt.Errorf("list projects error, err=%v", err))
-		return err
+	var (
+		pagesize   = 100
+		pagenumber = 1
+	)
+	projects := make([]*api.Project, 0)
+	for {
+		listProjectsResponse, err := c.client.FsProjectApi.ListProjects(int32(pagesize), int32(pagenumber))
+		if err != nil {
+			c.logError(fmt.Errorf("list projects error, err=%v", err))
+			return err
+		}
+		projects = append(projects, listProjectsResponse.Projects...)
+
+		if len(listProjectsResponse.Projects) == 0 || pagesize*pagenumber > listProjectsResponse.TotalCount {
+			break
+		}
+
+		pagenumber++
 	}
 
-	for _, p := range listProjectsResponse.Projects {
+	for _, p := range projects {
 		if p.ProjectName != c.client.GetConfig().ProjectName {
 			continue
 		}
@@ -431,10 +456,7 @@ func (c *FeatureStoreClient) lazyLoadProjectData() error {
 		project.SetApiClient(c.client)
 		projectData[project.ProjectName] = project
 
-		var (
-			pagesize   = 100
-			pagenumber = 1
-		)
+		pagenumber = 1
 
 		// get feature entities
 		for {
