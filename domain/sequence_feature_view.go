@@ -57,12 +57,18 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 		}
 
 		seen := make(map[string]bool)
+		nameSeqConfigsMap := make(map[string]*api.SeqConfig)
 		var uniqueSeqConfigs []*api.SeqConfig
 		for _, seqConfig := range sequenceFeatureView.sequenceConfig.SeqConfig {
 			if !seen[seqConfig.OnlineSeqName] {
-				uniqueSeqConfigs = append(uniqueSeqConfigs, seqConfig)
+				nameSeqConfigsMap[seqConfig.OnlineSeqName] = seqConfig
 				seen[seqConfig.OnlineSeqName] = true
+			} else if len(seqConfig.OnlineBehaviorTableFields) > 0 {
+				nameSeqConfigsMap[seqConfig.OnlineSeqName].OnlineBehaviorTableFields = append(nameSeqConfigsMap[seqConfig.OnlineSeqName].OnlineBehaviorTableFields, seqConfig.OnlineBehaviorTableFields...)
 			}
+		}
+		for _, seqConfig := range nameSeqConfigsMap {
+			uniqueSeqConfigs = append(uniqueSeqConfigs, seqConfig)
 		}
 		sequenceFeatureView.sequenceConfig.SeqConfig = uniqueSeqConfigs
 	}

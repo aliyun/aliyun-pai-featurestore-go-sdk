@@ -53,6 +53,31 @@ type FeatureViewFeatureDBDao struct {
 	primaryKeyField string
 }
 
+func CntSkipBytes(innerReader *bytes.Reader, fieldType constants.FSType) int {
+	var skipBytes int = 0
+	switch fieldType {
+	case constants.FS_INT32:
+		skipBytes = 4
+	case constants.FS_INT64:
+		skipBytes = 8
+	case constants.FS_FLOAT:
+		skipBytes = 4
+	case constants.FS_DOUBLE:
+		skipBytes = 8
+	case constants.FS_STRING:
+		var length uint32
+		binary.Read(innerReader, binary.LittleEndian, &length)
+		skipBytes = int(length)
+	case constants.FS_BOOLEAN:
+		skipBytes = 1
+	default:
+		var length uint32
+		binary.Read(innerReader, binary.LittleEndian, &length)
+		skipBytes = int(length)
+	}
+	return skipBytes
+}
+
 func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 	dao := FeatureViewFeatureDBDao{
 		database:        config.FeatureDBDatabaseName,
@@ -707,9 +732,28 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 
+	seqConfigsMap := make(map[string][]*api.SeqConfig)
+
+	seqConfigsBehaviorFieldsMap := make(map[string][]map[string]struct{})
+
+	withValue := false
+	for _, seqConfig := range onlineConfig {
+		mapKey := fmt.Sprintf("%s:%d", seqConfig.SeqEvent, seqConfig.SeqLen)
+		seqConfigsMap[mapKey] = append(seqConfigsMap[mapKey], seqConfig)
+		curBehaviorFields := seqConfig.OnlineBehaviorTableFields
+		curBehaviorFieldsMap := make(map[string]struct{})
+		for _, field := range curBehaviorFields {
+			curBehaviorFieldsMap[field] = struct{}{}
+		}
+		if len(curBehaviorFieldsMap) > 0 {
+			withValue = true
+			seqConfigsBehaviorFieldsMap[mapKey] = append(seqConfigsBehaviorFieldsMap[mapKey], curBehaviorFieldsMap)
+		}
+	}
+
 	errChan := make(chan error, len(keys)*len(onlineConfig))
 
-	fetchDataFunc := func(seqEvent string, seqLen int, key interface{}) []*sequenceInfo {
+	fetchDataFunc := func(seqEvent string, seqLen int, key interface{}, selectBehaviorFieldsSet map[string]struct{}) []*sequenceInfo {
 		sequences := []*sequenceInfo{}
 
 		events := strings.Split(seqEvent, "|")
@@ -718,8 +762,9 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			pks = append(pks, fmt.Sprintf("%v\u001D%s", key, event))
 		}
 		request := FeatureDBBatchGetKKVRequest{
-			PKs:    pks,
-			Length: seqLen,
+			PKs:       pks,
+			Length:    seqLen,
+			WithValue: withValue,
 		}
 		body, _ := json.Marshal(request)
 		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
@@ -768,6 +813,8 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 		}
 
 		reader := bufio.NewReader(response.Body)
+		innerReader := readerPool.Get().(*bytes.Reader)
+		defer readerPool.Put(innerReader)
 		for {
 			buf, err := deserialize(reader)
 			if err == io.EOF {
@@ -808,6 +855,8 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				seq.timestamp = kkv.EventTimestamp()
 				seq.playTime = kkv.PlayTime()
 
+				seq.onlineBehaviourTableFieldsMap = make(map[string]string)
+
 				if seq.event == "" || seq.itemId == "" {
 					continue
 				}
@@ -816,7 +865,90 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 						continue
 					}
 				}
+				dataBytes := kkv.ValueBytes()
+				if len(dataBytes) < 2 {
+					sequences = append(sequences, seq)
+					continue
+				}
+				innerReader.Reset(dataBytes)
+				// 读取版本号
+				var protocalVersion, ifNullFlagVersion uint8
+				binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
+				binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
+				readFeatureDBFunc_F_1 := func() (map[string]string, error) {
+					properties := make(map[string]string)
 
+					for _, field := range d.fields {
+						var isNull uint8
+						if err := binary.Read(innerReader, binary.LittleEndian, &isNull); err != nil {
+							if err == io.EOF {
+								break
+							}
+							return nil, err
+						}
+						if isNull == 1 {
+							// 跳过空值
+							continue
+						}
+
+						if _, exists := selectBehaviorFieldsSet[field]; exists {
+							switch d.fieldTypeMap[field] {
+							case constants.FS_INT32:
+								var int32Value int32
+								binary.Read(innerReader, binary.LittleEndian, &int32Value)
+								properties[field] = fmt.Sprintf("%d", int32Value)
+							case constants.FS_INT64:
+								var int64Value int64
+								binary.Read(innerReader, binary.LittleEndian, &int64Value)
+								properties[field] = fmt.Sprintf("%d", int64Value)
+							case constants.FS_FLOAT:
+								var float32Value float32
+								binary.Read(innerReader, binary.LittleEndian, &float32Value)
+								properties[field] = fmt.Sprintf("%v", float32Value)
+							case constants.FS_DOUBLE:
+								var float64Value float64
+								binary.Read(innerReader, binary.LittleEndian, &float64Value)
+								properties[field] = fmt.Sprintf("%v", float64Value)
+							case constants.FS_STRING:
+								var length uint32
+								binary.Read(innerReader, binary.LittleEndian, &length)
+								strBytes := make([]byte, length)
+								binary.Read(innerReader, binary.LittleEndian, &strBytes)
+								properties[field] = string(strBytes)
+							case constants.FS_BOOLEAN:
+								var boolValue bool
+								binary.Read(innerReader, binary.LittleEndian, &boolValue)
+								properties[field] = fmt.Sprintf("%v", boolValue)
+							default:
+								var length uint32
+								binary.Read(innerReader, binary.LittleEndian, &length)
+								strBytes := make([]byte, length)
+								binary.Read(innerReader, binary.LittleEndian, &strBytes)
+								properties[field] = string(strBytes)
+							}
+						} else {
+							skipBytes := CntSkipBytes(innerReader, d.fieldTypeMap[field])
+							if skipBytes > 0 {
+								if _, err := innerReader.Seek(int64(skipBytes), io.SeekCurrent); err != nil {
+									return nil, err
+								}
+							}
+						}
+					}
+					return properties, nil
+				}
+
+				if protocalVersion == FeatureDB_Protocal_Version_F && ifNullFlagVersion == FeatureDB_IfNull_Flag_Version_1 {
+					readResult, err := readFeatureDBFunc_F_1()
+					if err != nil {
+						errChan <- err
+						return nil
+					}
+					seq.onlineBehaviourTableFieldsMap = readResult
+				} else {
+					errChan <- fmt.Errorf("unsupported protocal version: %d, ifNullFlagVersion: %d", protocalVersion, ifNullFlagVersion)
+					continue
+				}
 				sequences = append(sequences, seq)
 			}
 		}
@@ -827,11 +959,6 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 	results := make([]map[string]interface{}, 0, len(keys))
 	var outmu sync.Mutex
 
-	seqConfigsMap := make(map[string][]*api.SeqConfig)
-	for _, seqConfig := range onlineConfig {
-		mapKey := fmt.Sprintf("%s:%d", seqConfig.SeqEvent, seqConfig.SeqLen)
-		seqConfigsMap[mapKey] = append(seqConfigsMap[mapKey], seqConfig)
-	}
 	var wg sync.WaitGroup
 	for _, key := range keys {
 		wg.Add(1)
@@ -841,9 +968,13 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			var mu sync.Mutex
 
 			var eventWg sync.WaitGroup
-			for _, seqConfigs := range seqConfigsMap {
+			for k, seqConfigs := range seqConfigsMap {
 				if len(seqConfigs) == 0 {
 					continue
+				}
+				seqConfigsBehaviorFields := make([]map[string]struct{}, len(seqConfigs))
+				if curFields, exits := seqConfigsBehaviorFieldsMap[k]; exits {
+					seqConfigsBehaviorFields = curFields
 				}
 				eventWg.Add(1)
 				go func(seqConfigs []*api.SeqConfig) {
@@ -854,7 +985,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 					// FeatureDB has processed the integration of online sequence features and offline sequence features
 					// Here we put the results into onlineSequences
 
-					if onlineresult := fetchDataFunc(seqConfigs[0].SeqEvent, seqConfigs[0].SeqLen, key); onlineresult != nil {
+					if onlineresult := fetchDataFunc(seqConfigs[0].SeqEvent, seqConfigs[0].SeqLen, key, seqConfigsBehaviorFields[0]); onlineresult != nil {
 						onlineSequences = onlineresult
 					}
 
@@ -1081,28 +1212,7 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 								properties[field] = string(strBytes)
 							}
 						} else {
-							var skipBytes int = 0
-							switch d.fieldTypeMap[field] {
-							case constants.FS_INT32:
-								skipBytes = 4
-							case constants.FS_INT64:
-								skipBytes = 8
-							case constants.FS_FLOAT:
-								skipBytes = 4
-							case constants.FS_DOUBLE:
-								skipBytes = 8
-							case constants.FS_STRING:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								skipBytes = int(length)
-							case constants.FS_BOOLEAN:
-								skipBytes = 1
-							default:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								skipBytes = int(length)
-							}
-
+							skipBytes := CntSkipBytes(innerReader, d.fieldTypeMap[field])
 							if skipBytes > 0 {
 								if _, err := innerReader.Seek(int64(skipBytes), io.SeekCurrent); err != nil {
 									return nil, err

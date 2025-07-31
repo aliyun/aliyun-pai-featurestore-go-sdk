@@ -20,8 +20,9 @@ type FeatureViewSeqConfig struct {
 }
 
 type SeqConfig struct {
-	OfflineSeqName string `json:"offline_seq_name"`
-	SeqEvent       string `json:"seq_event"`
-	SeqLen         int    `json:"seq_len"`
-	OnlineSeqName  string `json:"online_seq_name"`
+	OfflineSeqName            string `json:"offline_seq_name"`
+	SeqEvent                  string `json:"seq_event"`
+	SeqLen                    int    `json:"seq_len"`
+	OnlineSeqName             string `json:"online_seq_name"`
+	OnlineBehaviorTableFields []string `json:"online_behavior_table_fields"`
 }

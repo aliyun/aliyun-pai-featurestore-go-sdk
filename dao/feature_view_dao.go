@@ -92,7 +92,7 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 
 	//produce seqeunce feature correspond to easyrec processor
 	sequencesValueMap := make(map[string][]string)
-	sequenceMap := make(map[string]bool, 0)
+	sequenceMap := make(map[string]bool)
 
 	for _, seq := range onlineSequences {
 		key := fmt.Sprintf("%s#%s", seq.itemId, seq.event)
@@ -105,6 +105,9 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 				sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
 			}
 			sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
+			for k, v := range seq.onlineBehaviourTableFieldsMap {
+				sequencesValueMap[k] = append(sequencesValueMap[k], v)
+			}
 		}
 	}
 
