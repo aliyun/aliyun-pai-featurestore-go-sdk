@@ -979,18 +979,14 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				eventWg.Add(1)
 				go func(seqConfigs []*api.SeqConfig) {
 					defer eventWg.Done()
-					var onlineSequences []*sequenceInfo
-					var offlineSequences []*sequenceInfo
 
 					// FeatureDB has processed the integration of online sequence features and offline sequence features
 					// Here we put the results into onlineSequences
 
-					if onlineresult := fetchDataFunc(seqConfigs[0].SeqEvent, seqConfigs[0].SeqLen, key, seqConfigsBehaviorFields[0]); onlineresult != nil {
-						onlineSequences = onlineresult
-					}
+					onlineSequences := fetchDataFunc(seqConfigs[0].SeqEvent, seqConfigs[0].SeqLen, key, seqConfigsBehaviorFields[0])
 
 					for _, seqConfig := range seqConfigs {
-						subproperties := makeSequenceFeatures(offlineSequences, onlineSequences, seqConfig, sequenceConfig, currTime)
+						subproperties := makeSequenceFeatures4FeatureDB(onlineSequences, seqConfig, sequenceConfig, currTime)
 						mu.Lock()
 						for k, value := range subproperties {
 							properties[k] = value
