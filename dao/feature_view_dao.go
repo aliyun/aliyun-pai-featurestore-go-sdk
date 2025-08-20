@@ -92,12 +92,18 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 
 	//produce seqeunce feature correspond to easyrec processor
 	sequencesValueMap := make(map[string][]string)
-	sequenceMap := make(map[string]bool)
+	sequenceMap := make(map[string]struct{})
 
 	for _, seq := range onlineSequences {
-		key := fmt.Sprintf("%s#%s", seq.itemId, seq.event)
+		var key string
+		switch sequenceConfig.DeduplicationMethodNum {
+		case 1:
+			key = fmt.Sprintf("%s#%s", seq.itemId, seq.event)
+		case 2:
+			key = fmt.Sprintf("%s#%s#%d", seq.itemId, seq.event, seq.timestamp)
+		}
 		if _, exist := sequenceMap[key]; !exist {
-			sequenceMap[key] = true
+			sequenceMap[key] = struct{}{}
 			sequencesValueMap[sequenceConfig.ItemIdField] = append(sequencesValueMap[sequenceConfig.ItemIdField], seq.itemId)
 			sequencesValueMap[sequenceConfig.TimestampField] = append(sequencesValueMap[sequenceConfig.TimestampField], fmt.Sprintf("%d", seq.timestamp))
 			sequencesValueMap[sequenceConfig.EventField] = append(sequencesValueMap[sequenceConfig.EventField], seq.event)
@@ -105,9 +111,34 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 				sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
 			}
 			sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
-			for k, v := range seq.onlineBehaviourTableFieldsMap {
-				sequencesValueMap[k] = append(sequencesValueMap[k], v)
-			}
+		}
+	}
+
+	properties := make(map[string]interface{})
+	for key, value := range sequencesValueMap {
+		curSequenceSubName := (seqConfig.OnlineSeqName + "__" + key)
+		properties[curSequenceSubName] = strings.Join(value, ";")
+	}
+	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], ";")
+
+	return properties
+
+}
+
+func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *api.SeqConfig, sequenceConfig api.FeatureViewSeqConfig, currTime int64) map[string]interface{} {
+	//produce seqeunce feature correspond to easyrec processor
+	sequencesValueMap := make(map[string][]string)
+
+	for _, seq := range sequencesInfos {
+		sequencesValueMap[sequenceConfig.ItemIdField] = append(sequencesValueMap[sequenceConfig.ItemIdField], seq.itemId)
+		sequencesValueMap[sequenceConfig.TimestampField] = append(sequencesValueMap[sequenceConfig.TimestampField], fmt.Sprintf("%d", seq.timestamp))
+		sequencesValueMap[sequenceConfig.EventField] = append(sequencesValueMap[sequenceConfig.EventField], seq.event)
+		if sequenceConfig.PlayTimeField != "" {
+			sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
+		}
+		sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
+		for k, v := range seq.onlineBehaviourTableFieldsMap {
+			sequencesValueMap[k] = append(sequencesValueMap[k], v)
 		}
 	}
 
