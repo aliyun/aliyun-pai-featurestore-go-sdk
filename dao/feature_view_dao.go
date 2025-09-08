@@ -55,6 +55,14 @@ func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 	panic("not found FeatureViewDao implement")
 }
 
+type sequenceInfo struct {
+	itemId                        string
+	event                         string
+	playTime                      float64
+	timestamp                     int64
+	onlineBehaviourTableFieldsMap map[string]string
+}
+
 func makePlayTimeMap(playTimeFilter string) map[string]float64 {
 	sequencePlayTimeMap := make(map[string]float64)
 	if playTimeFilter != "" {
