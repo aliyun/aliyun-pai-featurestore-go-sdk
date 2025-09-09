@@ -145,8 +145,8 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 			sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
 		}
 		sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
-		for k, v := range seq.onlineBehaviourTableFieldsMap {
-			sequencesValueMap[k] = append(sequencesValueMap[k], v)
+		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
+			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], seq.onlineBehaviourTableFieldsMap[behaviorField])
 		}
 	}
 
