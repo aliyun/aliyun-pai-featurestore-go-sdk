@@ -488,8 +488,6 @@ func (c *FeatureStoreClient) lazyLoadProjectData() error {
 }
 
 func (c *FeatureStoreClient) loopLoadProjectData() {
-	randomSeconds := rand.Intn(240) + 60
-	time.Sleep(time.Duration(randomSeconds) * time.Second)
 
 	func() {
 		defer func() {
@@ -500,6 +498,9 @@ func (c *FeatureStoreClient) loopLoadProjectData() {
 
 		c.LoadProjectData()
 	}()
+
+	randomSeconds := rand.Intn(60)
+	time.Sleep(time.Duration(randomSeconds) * time.Second)
 
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
