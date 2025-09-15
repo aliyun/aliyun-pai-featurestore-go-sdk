@@ -1399,7 +1399,7 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 
 func (d *FeatureViewFeatureDBDao) createSnapshot() (string, int64, error) {
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots",
-		d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table), bytes.NewReader(nil))
+		d.featureDBClient.GetNormalAddress(), d.database, d.schema, d.table), bytes.NewReader(nil))
 	if err != nil {
 		return "", 0, err
 	}
@@ -1509,7 +1509,7 @@ func (d *FeatureViewFeatureDBDao) ScanAndIterateData(filter string, ch chan<- st
 			for {
 				time.Sleep(time.Second * 5)
 				req, err := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/iterate_get_kv?ts=%d",
-					d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table, ts), bytes.NewReader(nil))
+					d.featureDBClient.GetNormalAddress(), d.database, d.schema, d.table, ts), bytes.NewReader(nil))
 				if err != nil {
 					continue
 				}

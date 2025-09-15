@@ -117,6 +117,10 @@ func (f *FeatureDBClient) GetCurrentAddress(check bool) string {
 	}
 }
 
+func (f *FeatureDBClient) GetNormalAddress() string {
+	return f.address
+}
+
 func (f *FeatureDBClient) Stop() {
 	close(f.stopChan)
 }
