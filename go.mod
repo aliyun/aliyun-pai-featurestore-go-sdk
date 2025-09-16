@@ -1,6 +1,8 @@
 module github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2
 
-go 1.19
+go 1.24.0
+
+toolchain go1.24.5
 
 require (
 	fortio.org/assert v1.2.1
@@ -15,6 +17,7 @@ require (
 	github.com/google/flatbuffers v2.0.8+incompatible
 	github.com/huandu/go-sqlbuilder v1.21.0
 	github.com/lib/pq v1.10.9
+	golang.org/x/sync v0.1.0
 	google.golang.org/protobuf v1.33.0
 )
 
