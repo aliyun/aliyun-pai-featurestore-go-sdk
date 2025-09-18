@@ -1,8 +1,6 @@
 module github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2
 
-go 1.24.0
-
-toolchain go1.24.5
+go 1.24
 
 require (
 	fortio.org/assert v1.2.1
