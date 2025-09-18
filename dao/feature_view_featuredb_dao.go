@@ -107,7 +107,9 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	const groupSize = 200
+	groupSize := len(keys) / 4
+	groupSize = max(groupSize, 200)
+	groupSize = min(groupSize, 500)
 	if d.signature == "" {
 		return result, errors.New("FeatureStore DB username and password are not entered, please enter them by adding client.LoginFeatureStoreDB(username, password)")
 	}
