@@ -55,6 +55,14 @@ func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 	panic("not found FeatureViewDao implement")
 }
 
+type sequenceInfo struct {
+	itemId                        string
+	event                         string
+	playTime                      float64
+	timestamp                     int64
+	onlineBehaviourTableFieldsMap map[string]string
+}
+
 func makePlayTimeMap(playTimeFilter string) map[string]float64 {
 	sequencePlayTimeMap := make(map[string]float64)
 	if playTimeFilter != "" {
@@ -137,8 +145,8 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 			sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
 		}
 		sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
-		for k, v := range seq.onlineBehaviourTableFieldsMap {
-			sequencesValueMap[k] = append(sequencesValueMap[k], v)
+		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
+			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], seq.onlineBehaviourTableFieldsMap[behaviorField])
 		}
 	}
 

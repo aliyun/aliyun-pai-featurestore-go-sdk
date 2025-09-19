@@ -734,22 +734,27 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 
-	seqConfigsMap := make(map[string][]*api.SeqConfig)
-
-	seqConfigsBehaviorFieldsMap := make(map[string][]map[string]struct{})
+	seqConfigsMap := make(map[string][]*api.SeqConfig)                  // seqEvent -> seqConfigs
+	seqConfigsBehaviorFieldsMap := make(map[string]map[string]struct{}) // seqEvent -> behaviorFields
+	maxSeqLenMap := make(map[string]int)                                // 每个 seqEvent 最大的 seqLen
 
 	withValue := false
 	for _, seqConfig := range onlineConfig {
-		mapKey := fmt.Sprintf("%s:%d", seqConfig.SeqEvent, seqConfig.SeqLen)
+		mapKey := seqConfig.SeqEvent
 		seqConfigsMap[mapKey] = append(seqConfigsMap[mapKey], seqConfig)
-		curBehaviorFields := seqConfig.OnlineBehaviorTableFields
-		curBehaviorFieldsMap := make(map[string]struct{})
-		for _, field := range curBehaviorFields {
-			curBehaviorFieldsMap[field] = struct{}{}
+		if seqConfig.SeqLen > maxSeqLenMap[mapKey] {
+			maxSeqLenMap[mapKey] = seqConfig.SeqLen
 		}
-		if len(curBehaviorFieldsMap) > 0 {
+
+		if _, exists := seqConfigsBehaviorFieldsMap[mapKey]; !exists {
+			seqConfigsBehaviorFieldsMap[mapKey] = make(map[string]struct{})
+		}
+		for _, field := range seqConfig.OnlineBehaviorTableFields {
+			seqConfigsBehaviorFieldsMap[mapKey][field] = struct{}{}
+		}
+
+		if len(seqConfig.OnlineBehaviorTableFields) > 0 {
 			withValue = true
-			seqConfigsBehaviorFieldsMap[mapKey] = append(seqConfigsBehaviorFieldsMap[mapKey], curBehaviorFieldsMap)
 		}
 	}
 
@@ -970,32 +975,37 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			var mu sync.Mutex
 
 			var eventWg sync.WaitGroup
-			for k, seqConfigs := range seqConfigsMap {
+			for seqEvent, seqConfigs := range seqConfigsMap {
 				if len(seqConfigs) == 0 {
 					continue
 				}
-				seqConfigsBehaviorFields := make([]map[string]struct{}, len(seqConfigs))
-				if curFields, exits := seqConfigsBehaviorFieldsMap[k]; exits {
-					seqConfigsBehaviorFields = curFields
-				}
+				seqConfigsBehaviorFields := seqConfigsBehaviorFieldsMap[seqEvent]
+				maxLen := maxSeqLenMap[seqEvent]
 				eventWg.Add(1)
-				go func(seqConfigs []*api.SeqConfig) {
+				go func(seqEvent string, seqConfigs []*api.SeqConfig, maxLen int, seqConfigsBehaviorFields map[string]struct{}) {
 					defer eventWg.Done()
 
 					// FeatureDB has processed the integration of online sequence features and offline sequence features
 					// Here we put the results into onlineSequences
 
-					onlineSequences := fetchDataFunc(seqConfigs[0].SeqEvent, seqConfigs[0].SeqLen, key, seqConfigsBehaviorFields[0])
+					onlineSequences := fetchDataFunc(seqEvent, maxLen, key, seqConfigsBehaviorFields)
 
 					for _, seqConfig := range seqConfigs {
-						subproperties := makeSequenceFeatures4FeatureDB(onlineSequences, seqConfig, sequenceConfig, currTime)
+						var truncatedSequences []*sequenceInfo
+						if seqConfig.SeqLen >= len(onlineSequences) {
+							truncatedSequences = onlineSequences
+						} else {
+							truncatedSequences = onlineSequences[:seqConfig.SeqLen]
+						}
+
+						subproperties := makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
 						mu.Lock()
 						for k, value := range subproperties {
 							properties[k] = value
 						}
 						mu.Unlock()
 					}
-				}(seqConfigs)
+				}(seqEvent, seqConfigs, maxLen, seqConfigsBehaviorFields)
 			}
 			eventWg.Wait()
 
