@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"sync"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
@@ -20,6 +22,10 @@ type Project struct {
 	FeatureEntityMap map[string]*FeatureEntity
 	ModelMap         sync.Map
 	LabelTableMap    sync.Map
+
+	featureViewLoader singleflight.Group
+	modelLoader       singleflight.Group
+	labelTableLoader  singleflight.Group
 
 	apiClient *api.APIClient
 }
@@ -91,13 +97,24 @@ func (p *Project) GetFeatureView(name string) FeatureView {
 	if value, exists := p.FeatureViewMap.Load(name); exists {
 		return value.(FeatureView)
 	}
-	if err := p.loadFeatureView(name); err != nil {
+
+	result, err, _ := p.featureViewLoader.Do(name, func() (interface{}, error) {
+		if value, exists := p.FeatureViewMap.Load(name); exists {
+			return value.(FeatureView), nil
+		}
+		if err := p.loadFeatureView(name); err != nil {
+			return nil, err
+		}
+		if value, exists := p.FeatureViewMap.Load(name); exists {
+			return value.(FeatureView), nil
+		}
+		return nil, fmt.Errorf("feature view not exist, name=%s", name)
+	})
+	if err != nil {
 		return nil
 	}
-	if value, exists := p.FeatureViewMap.Load(name); exists {
-		return value.(FeatureView)
-	}
-	return nil
+
+	return result.(FeatureView)
 }
 
 func (p *Project) GetFeatureEntity(name string) *FeatureEntity {
@@ -108,38 +125,72 @@ func (p *Project) GetLabelTable(labelTableId int) *LabelTable {
 	if value, exists := p.LabelTableMap.Load(labelTableId); exists {
 		return value.(*LabelTable)
 	}
-	if err := p.loadLabelTable(labelTableId); err != nil {
+
+	key := strconv.Itoa(labelTableId)
+	result, err, _ := p.labelTableLoader.Do(key, func() (interface{}, error) {
+		if value, exists := p.LabelTableMap.Load(labelTableId); exists {
+			return value.(*LabelTable), nil
+		}
+		if err := p.loadLabelTable(labelTableId); err != nil {
+			return nil, err
+		}
+		if value, exists := p.LabelTableMap.Load(labelTableId); exists {
+			return value.(*LabelTable), nil
+		}
+		return nil, fmt.Errorf("label table not exist, id=%d", labelTableId)
+	})
+	if err != nil {
 		return nil
 	}
-	if value, exists := p.LabelTableMap.Load(labelTableId); exists {
-		return value.(*LabelTable)
-	}
-	return nil
+
+	return result.(*LabelTable)
 }
 
 func (p *Project) GetModel(name string) *Model {
 	if value, exists := p.ModelMap.Load(name); exists {
 		return value.(*Model)
 	}
-	if err := p.loadModelFeature(name); err != nil {
+
+	result, err, _ := p.modelLoader.Do(name, func() (interface{}, error) {
+		if value, exists := p.ModelMap.Load(name); exists {
+			return value.(*Model), nil
+		}
+		if err := p.loadModelFeature(name); err != nil {
+			return nil, err
+		}
+		if value, exists := p.ModelMap.Load(name); exists {
+			return value.(*Model), nil
+		}
+		return nil, fmt.Errorf("model not exist, name=%s", name)
+	})
+	if err != nil {
 		return nil
 	}
-	if value, exists := p.ModelMap.Load(name); exists {
-		return value.(*Model)
-	}
-	return nil
+
+	return result.(*Model)
 }
 func (p *Project) GetModelFeature(name string) *Model {
 	if value, exists := p.ModelMap.Load(name); exists {
 		return value.(*Model)
 	}
-	if err := p.loadModelFeature(name); err != nil {
+
+	result, err, _ := p.modelLoader.Do(name, func() (interface{}, error) {
+		if value, exists := p.ModelMap.Load(name); exists {
+			return value.(*Model), nil
+		}
+		if err := p.loadModelFeature(name); err != nil {
+			return nil, err
+		}
+		if value, exists := p.ModelMap.Load(name); exists {
+			return value.(*Model), nil
+		}
+		return nil, fmt.Errorf("model not exist, name=%s", name)
+	})
+	if err != nil {
 		return nil
 	}
-	if value, exists := p.ModelMap.Load(name); exists {
-		return value.(*Model)
-	}
-	return nil
+
+	return result.(*Model)
 }
 
 func (p *Project) loadFeatureView(featureViewName string) error {
