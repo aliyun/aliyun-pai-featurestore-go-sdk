@@ -34,10 +34,9 @@ func InitFeatureDBClient(address, token, vpcAddress string) {
 			MaxIdleConns:        1000,
 			MaxIdleConnsPerHost: 1000,
 			DialContext: (&net.Dialer{
-				Timeout:   200 * time.Millisecond,
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
-			ResponseHeaderTimeout: 500 * time.Millisecond,
+			ResponseHeaderTimeout: 1000 * time.Millisecond,
 			IdleConnTimeout:       90 * time.Second,
 		},
 	}
