@@ -267,6 +267,16 @@ func (f *SequenceFeatureView) GetBehaviorFeatures(userIds []interface{}, events 
 		}
 	}
 
+	if len(events) == 0 && f.sequenceConfig.RegistrationMode == constants.Seq_Registration_Mode_Full_Sequence {
+		eventMap := make(map[string]struct{})
+		for _, seqConfig := range f.sequenceConfig.SeqConfig {
+			if _, exist := eventMap[seqConfig.SeqEvent]; !exist {
+				eventMap[seqConfig.SeqEvent] = struct{}{}
+				events = append(events, seqConfig.SeqEvent)
+			}
+		}
+	}
+
 	behaviorFeatureResult, err := f.featureViewDao.GetUserBehaviorFeature(userIds, events, selectFields, f.sequenceConfig)
 
 	if f.userIdField != f.FeatureEntity.FeatureEntityJoinid {
