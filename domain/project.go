@@ -30,7 +30,7 @@ type Project struct {
 	apiClient *api.APIClient
 }
 
-func NewProject(p *api.Project, isInitClient bool) *Project {
+func NewProject(p *api.Project, isInitClient, isTestMode bool) *Project {
 	project := Project{
 		Project:          p,
 		FeatureEntityMap: make(map[string]*FeatureEntity),
@@ -83,7 +83,7 @@ func NewProject(p *api.Project, isInitClient bool) *Project {
 	}
 
 	if p.FeatureDBAddress != "" && p.FeatureDBToken != "" {
-		featuredb.InitFeatureDBClient(p.FeatureDBAddress, p.FeatureDBToken, p.FeatureDBVpcAddress)
+		featuredb.InitFeatureDBClient(p.FeatureDBAddress, p.FeatureDBToken, p.FeatureDBVpcAddress, isTestMode)
 	}
 
 	return &project

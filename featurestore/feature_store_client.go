@@ -280,7 +280,7 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 
 		p.Signature = c.signature
 
-		project := domain.NewProject(p, c.datasourceInitClient)
+		project := domain.NewProject(p, c.datasourceInitClient, c.testMode)
 		project.SetApiClient(c.client)
 		projectData[project.ProjectName] = project
 
@@ -453,7 +453,7 @@ func (c *FeatureStoreClient) lazyLoadProjectData() error {
 
 		p.Signature = c.signature
 
-		project := domain.NewProject(p, c.datasourceInitClient)
+		project := domain.NewProject(p, c.datasourceInitClient, c.testMode)
 		project.SetApiClient(c.client)
 		projectData[project.ProjectName] = project
 
