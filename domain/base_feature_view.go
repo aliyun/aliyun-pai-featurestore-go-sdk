@@ -195,6 +195,10 @@ func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []st
 
 }
 
+func (f *BaseFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
+	return nil, errors.New("only sequence feature view supports GetOnlineAggregatedFeatures")
+}
+
 func (f *BaseFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
 	return nil, errors.New("only sequence feature view supports GetBehaviorFeatures")
 }

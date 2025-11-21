@@ -1029,6 +1029,287 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 	return results, nil
 }
 
+func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error) {
+	currTime := time.Now().Unix()
+	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
+
+	seqConfigsMap := make(map[string][]*api.SeqConfig)                  // seqEvent -> seqConfigs
+	seqConfigsBehaviorFieldsMap := make(map[string]map[string]struct{}) // seqEvent -> behaviorFields
+	maxSeqLenMap := make(map[string]int)                                // 每个 seqEvent 最大的 seqLen
+
+	withValue := false
+	for _, seqConfig := range onlineConfig {
+		mapKey := seqConfig.SeqEvent
+		seqConfigsMap[mapKey] = append(seqConfigsMap[mapKey], seqConfig)
+		if seqConfig.SeqLen > maxSeqLenMap[mapKey] {
+			maxSeqLenMap[mapKey] = seqConfig.SeqLen
+		}
+
+		if _, exists := seqConfigsBehaviorFieldsMap[mapKey]; !exists {
+			seqConfigsBehaviorFieldsMap[mapKey] = make(map[string]struct{})
+		}
+		for _, field := range seqConfig.OnlineBehaviorTableFields {
+			seqConfigsBehaviorFieldsMap[mapKey][field] = struct{}{}
+		}
+
+		if len(seqConfig.OnlineBehaviorTableFields) > 0 {
+			withValue = true
+		}
+	}
+
+	errChan := make(chan error, len(keys)*len(onlineConfig))
+
+	fetchDataFunc := func(seqEvent string, seqLen int, keys []interface{}, selectBehaviorFieldsSet map[string]struct{}) []*sequenceInfo {
+		sequences := []*sequenceInfo{}
+
+		events := strings.Split(seqEvent, "|")
+		pks := []string{}
+		for _, event := range events {
+			for _, key := range keys {
+				pks = append(pks, fmt.Sprintf("%v\u001D%s", key, event))
+			}
+		}
+		request := FeatureDBBatchGetKKVRequest{
+			PKs:       pks,
+			Length:    seqLen,
+			WithValue: withValue,
+		}
+		body, _ := json.Marshal(request)
+		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
+		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+		if err != nil {
+			errChan <- err
+			return nil
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", d.featureDBClient.Token)
+		req.Header.Set("Auth", d.signature)
+
+		response, err := d.featureDBClient.Client.Do(req)
+		if err != nil {
+			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
+			req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+			if err != nil {
+				errChan <- err
+				return nil
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", d.featureDBClient.Token)
+			req.Header.Set("Auth", d.signature)
+			response, err = d.featureDBClient.Client.Do(req)
+
+			if err != nil {
+				errChan <- err
+				return nil
+			}
+		}
+		defer response.Body.Close() // 确保关闭response.Body
+		// 检查状态码
+		if response.StatusCode != http.StatusOK {
+			bodyBytes, err := io.ReadAll(response.Body)
+			if err != nil {
+				errChan <- err
+				return nil
+			}
+			var bodyMap map[string]interface{}
+			if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+				if msg, found := bodyMap["message"]; found {
+					log.Printf("StatusCode: %d, Response message: %s\n", response.StatusCode, msg)
+				}
+			}
+			return nil
+		}
+
+		reader := bufio.NewReader(response.Body)
+		innerReader := readerPool.Get().(*bytes.Reader)
+		defer readerPool.Put(innerReader)
+		for {
+			buf, err := deserialize(reader)
+			if err == io.EOF {
+				break // End of stream
+			}
+			if err != nil {
+				errChan <- err
+				return nil
+			}
+
+			kkvRecordBlock := fdbserverfb.GetRootAsKKVRecordBlock(buf, 0)
+
+			for i := 0; i < kkvRecordBlock.ValuesLength(); i++ {
+				kkv := new(fdbserverfb.KKVData)
+				kkvRecordBlock.Values(kkv, i)
+				pk := string(kkv.Pk())
+				userIdEvent := strings.Split(pk, "\u001D")
+				if len(userIdEvent) != 2 {
+					continue
+				}
+				var itemId string
+				if sequenceConfig.DeduplicationMethodNum == 1 {
+					itemId = string(kkv.Sk())
+				} else if sequenceConfig.DeduplicationMethodNum == 2 {
+					sk := string(kkv.Sk())
+					itemIdTimestamp := strings.Split(sk, "\u001D")
+					if len(itemIdTimestamp) != 2 {
+						continue
+					}
+					itemId = itemIdTimestamp[0]
+				} else {
+					continue
+				}
+
+				seq := new(sequenceInfo)
+				seq.event = userIdEvent[1]
+				seq.itemId = itemId
+				seq.timestamp = kkv.EventTimestamp()
+				seq.playTime = kkv.PlayTime()
+
+				seq.onlineBehaviourTableFieldsMap = make(map[string]string)
+
+				if seq.event == "" || seq.itemId == "" {
+					continue
+				}
+				if t, exist := sequencePlayTimeMap[seq.event]; exist {
+					if seq.playTime <= t {
+						continue
+					}
+				}
+				dataBytes := kkv.ValueBytes()
+				if len(dataBytes) < 2 {
+					sequences = append(sequences, seq)
+					continue
+				}
+				innerReader.Reset(dataBytes)
+				// 读取版本号
+				var protocalVersion, ifNullFlagVersion uint8
+				binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
+				binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
+				readFeatureDBFunc_F_1 := func() (map[string]string, error) {
+					properties := make(map[string]string)
+
+					for _, field := range d.fields {
+						var isNull uint8
+						if err := binary.Read(innerReader, binary.LittleEndian, &isNull); err != nil {
+							if err == io.EOF {
+								break
+							}
+							return nil, err
+						}
+						if isNull == 1 {
+							// 跳过空值
+							continue
+						}
+
+						if _, exists := selectBehaviorFieldsSet[field]; exists {
+							switch d.fieldTypeMap[field] {
+							case constants.FS_INT32:
+								var int32Value int32
+								binary.Read(innerReader, binary.LittleEndian, &int32Value)
+								properties[field] = fmt.Sprintf("%d", int32Value)
+							case constants.FS_INT64:
+								var int64Value int64
+								binary.Read(innerReader, binary.LittleEndian, &int64Value)
+								properties[field] = fmt.Sprintf("%d", int64Value)
+							case constants.FS_FLOAT:
+								var float32Value float32
+								binary.Read(innerReader, binary.LittleEndian, &float32Value)
+								properties[field] = fmt.Sprintf("%v", float32Value)
+							case constants.FS_DOUBLE:
+								var float64Value float64
+								binary.Read(innerReader, binary.LittleEndian, &float64Value)
+								properties[field] = fmt.Sprintf("%v", float64Value)
+							case constants.FS_STRING:
+								var length uint32
+								binary.Read(innerReader, binary.LittleEndian, &length)
+								strBytes := make([]byte, length)
+								binary.Read(innerReader, binary.LittleEndian, &strBytes)
+								properties[field] = string(strBytes)
+							case constants.FS_BOOLEAN:
+								var boolValue bool
+								binary.Read(innerReader, binary.LittleEndian, &boolValue)
+								properties[field] = fmt.Sprintf("%v", boolValue)
+							default:
+								var length uint32
+								binary.Read(innerReader, binary.LittleEndian, &length)
+								strBytes := make([]byte, length)
+								binary.Read(innerReader, binary.LittleEndian, &strBytes)
+								properties[field] = string(strBytes)
+							}
+						} else {
+							skipBytes := CntSkipBytes(innerReader, d.fieldTypeMap[field])
+							if skipBytes > 0 {
+								if _, err := innerReader.Seek(int64(skipBytes), io.SeekCurrent); err != nil {
+									return nil, err
+								}
+							}
+						}
+					}
+					return properties, nil
+				}
+
+				if protocalVersion == FeatureDB_Protocal_Version_F && ifNullFlagVersion == FeatureDB_IfNull_Flag_Version_1 {
+					readResult, err := readFeatureDBFunc_F_1()
+					if err != nil {
+						errChan <- err
+						return nil
+					}
+					seq.onlineBehaviourTableFieldsMap = readResult
+				} else {
+					errChan <- fmt.Errorf("unsupported protocal version: %d, ifNullFlagVersion: %d", protocalVersion, ifNullFlagVersion)
+					continue
+				}
+				sequences = append(sequences, seq)
+			}
+		}
+
+		return sequences
+	}
+
+	results := make(map[string]interface{})
+
+	var mu sync.Mutex
+
+	var eventWg sync.WaitGroup
+	for seqEvent, seqConfigs := range seqConfigsMap {
+		if len(seqConfigs) == 0 {
+			continue
+		}
+		seqConfigsBehaviorFields := seqConfigsBehaviorFieldsMap[seqEvent]
+		maxLen := maxSeqLenMap[seqEvent]
+		eventWg.Add(1)
+		go func(seqEvent string, seqConfigs []*api.SeqConfig, maxLen int, seqConfigsBehaviorFields map[string]struct{}) {
+			defer eventWg.Done()
+
+			// FeatureDB has processed the integration of online sequence features and offline sequence features
+			// Here we put the results into onlineSequences
+
+			onlineSequences := fetchDataFunc(seqEvent, maxLen, keys, seqConfigsBehaviorFields)
+
+			for _, seqConfig := range seqConfigs {
+				var truncatedSequences []*sequenceInfo
+				if seqConfig.SeqLen >= len(onlineSequences) {
+					truncatedSequences = onlineSequences
+				} else {
+					truncatedSequences = onlineSequences[:seqConfig.SeqLen]
+				}
+
+				subproperties := makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
+				mu.Lock()
+				for k, value := range subproperties {
+					results[k] = value
+				}
+				mu.Unlock()
+			}
+		}(seqEvent, seqConfigs, maxLen, seqConfigsBehaviorFields)
+	}
+	eventWg.Wait()
+
+	if len(keys) > 0 {
+		results[userIdField] = keys[0]
+	}
+
+	return results, nil
+}
+
 type FeatureDBScanKKVRequest struct {
 	Prefixs   []string `json:"prefixs"`
 	Length    int      `json:"length"`

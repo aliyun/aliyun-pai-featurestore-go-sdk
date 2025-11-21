@@ -239,6 +239,41 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 	return sequenceFeatureResults, err
 }
 
+func (f *SequenceFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
+	if f.sequenceConfig.RegistrationMode == constants.Seq_Registration_Mode_Only_Behavior {
+		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
+	}
+	sequenceConfig := f.sequenceConfig
+	onlineConfig := []*api.SeqConfig{}
+	seenFields := make(map[string]bool)
+
+	for _, feature := range features {
+		if feature == "*" {
+			onlineConfig = sequenceConfig.SeqConfig
+			break
+		} else {
+			found := false
+			for _, seqConfig := range sequenceConfig.SeqConfig {
+				if seqConfig.OnlineSeqName == feature {
+					found = true
+					if !seenFields[feature] {
+						onlineConfig = append(onlineConfig, seqConfig)
+						seenFields[feature] = true
+					}
+					break
+				}
+			}
+			if !found {
+				return nil, fmt.Errorf("sequence feature name :%s not found in feature view config", feature)
+			}
+		}
+	}
+
+	sequenceFeatureResults, err := f.featureViewDao.GetUserAggregatedSequenceFeature(joinIds, f.userIdField, sequenceConfig, onlineConfig)
+
+	return sequenceFeatureResults, err
+}
+
 func (f *SequenceFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
 	var selectFields []string
 	seenFields := make(map[string]bool)
