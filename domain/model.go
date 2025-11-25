@@ -16,7 +16,9 @@ type Model struct {
 	featureNamesMap         map[string][]string               // featureview : feature names
 	aliasNamesMap           map[string]map[string]string      // featureview : alias names
 	featureEntityJoinIdMap  map[string]map[string]FeatureView // feature entity joinid : featureviews
-	featureEntityJoinIdList []string
+	featureEntityJoinIdList []string                          // slice of root feature entity joinids
+	rootJoinIdSet           map[string]bool                   // set of root feature entity joinids
+	childEntitiesMap        map[string][]string               // parent joinid : children's joinid
 	labelTable              *LabelTable
 }
 
@@ -30,6 +32,8 @@ func NewModel(model *api.Model, p *Project, lt *LabelTable) *Model {
 		featureNamesMap:        make(map[string][]string),
 		aliasNamesMap:          make(map[string]map[string]string),
 		featureEntityJoinIdMap: make(map[string]map[string]FeatureView),
+		rootJoinIdSet:          make(map[string]bool),
+		childEntitiesMap:       make(map[string][]string),
 	}
 
 	for _, feature := range m.Features {
@@ -56,11 +60,16 @@ func NewModel(model *api.Model, p *Project, lt *LabelTable) *Model {
 		m.featureEntityJoinIdMap[featureEntity.FeatureEntityJoinid] = featureViewMap
 
 	}
-	for joinid := range m.featureEntityJoinIdMap {
-		m.featureEntityJoinIdList = append(m.featureEntityJoinIdList, joinid)
+
+	for _, entity := range m.featureEntityMap {
+		if entity.ParentFeatureEntityId == 0 {
+			m.featureEntityJoinIdList = append(m.featureEntityJoinIdList, entity.FeatureEntityJoinid)
+			m.rootJoinIdSet[entity.FeatureEntityJoinid] = true
+		} else {
+			m.childEntitiesMap[entity.ParentJoinId] = append(m.childEntitiesMap[entity.ParentJoinId], entity.FeatureEntityJoinid)
+		}
 	}
 
-	//fmt.Println(m)
 	return m
 }
 
@@ -68,13 +77,14 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 
 	size := -1
 	for _, joinid := range m.featureEntityJoinIdList {
-		if _, ok := joinIds[joinid]; !ok {
+		keys, ok := joinIds[joinid]
+		if !ok {
 			return nil, fmt.Errorf("join id:%s not found", joinid)
 		}
 		if size == -1 {
-			size = len(joinIds[joinid])
+			size = len(keys)
 		} else {
-			if size != len(joinIds[joinid]) {
+			if size != len(keys) {
 				return nil, fmt.Errorf("join id:%s length not equal", joinid)
 			}
 		}
@@ -84,8 +94,10 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 
 	var wg sync.WaitGroup
 	joinIdFeaturesMap := make(map[string][]map[string]interface{})
-	for joinId, keys := range joinIds {
-		featureViewMap := m.featureEntityJoinIdMap[joinId]
+	// read features of root entities
+	for _, rootJoinId := range m.featureEntityJoinIdList {
+		keys := joinIds[rootJoinId]
+		featureViewMap := m.featureEntityJoinIdMap[rootJoinId]
 
 		for _, featureView := range featureViewMap {
 			wg.Add(1)
@@ -100,28 +112,130 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 				joinIdFeaturesMap[joinId] = append(joinIdFeaturesMap[joinId], features...)
 				mu.Unlock()
 
-			}(featureView, joinId, keys)
+			}(featureView, rootJoinId, keys)
 		}
 	}
 	wg.Wait()
 
-	featuresResult := make([]map[string]interface{}, 0, size)
-	for i := 0; i < size; i++ {
-		features := make(map[string]interface{}, len(m.Features)+len(m.featureEntityJoinIdMap))
-		for _, joinid := range m.featureEntityJoinIdList {
-			joinIdValue := joinIds[joinid][i]
-			for _, joinIdFeatures := range joinIdFeaturesMap[joinid] {
-				if utils.ToString(joinIdFeatures[joinid], "") == utils.ToString(joinIdValue, " ") {
-					for k, v := range joinIdFeatures {
-						features[k] = v
+	// read keys of child entities with deduplication
+	childJoinIdKeys := make(map[string][]interface{})
+	childJoinIdKeySet := make(map[string]map[string]struct{})
+	for _, rootJoinId := range m.featureEntityJoinIdList {
+		if children, ok := m.childEntitiesMap[rootJoinId]; ok {
+			for _, row := range joinIdFeaturesMap[rootJoinId] {
+				for _, childJoinId := range children {
+					if val, exists := row[childJoinId]; exists && val != nil {
+						valStr := utils.ToString(val, "")
+						if valStr == "" {
+							continue
+						}
+						if childJoinIdKeySet[childJoinId] == nil {
+							childJoinIdKeySet[childJoinId] = make(map[string]struct{})
+						}
+						if _, seen := childJoinIdKeySet[childJoinId][valStr]; !seen {
+							childJoinIdKeySet[childJoinId][valStr] = struct{}{}
+							childJoinIdKeys[childJoinId] = append(childJoinIdKeys[childJoinId], val)
+						}
 					}
 				}
 			}
 		}
-
-		featuresResult = append(featuresResult, features)
-
 	}
+
+	// read features of child entities
+	if len(childJoinIdKeys) > 0 {
+		var childWg sync.WaitGroup
+		for childJoinId, keys := range childJoinIdKeys {
+			if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
+				for _, featureView := range featureViewMap {
+					childWg.Add(1)
+					go func(featureView FeatureView, joinId string, keys []interface{}) {
+						defer childWg.Done()
+						features, err := featureView.GetOnlineFeatures(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+						if err != nil {
+							fmt.Println(err)
+						}
+
+						mu.Lock()
+						joinIdFeaturesMap[joinId] = append(joinIdFeaturesMap[joinId], features...)
+						mu.Unlock()
+					}(featureView, childJoinId, keys)
+				}
+			}
+		}
+		childWg.Wait()
+	}
+
+	featuresResult := make([]map[string]interface{}, size)
+	for i := 0; i < size; i++ {
+		featuresResult[i] = make(map[string]interface{})
+	}
+	// merge features of root entities
+	rootKeyToIndex := make(map[string]map[string]int)
+	for _, joinId := range m.featureEntityJoinIdList {
+		idxMap := make(map[string]int)
+		for idx, key := range joinIds[joinId] {
+			idxMap[utils.ToString(key, "")] = idx
+		}
+		rootKeyToIndex[joinId] = idxMap
+	}
+	for _, rootJoinId := range m.featureEntityJoinIdList {
+		keyMap := rootKeyToIndex[rootJoinId]
+		for _, row := range joinIdFeaturesMap[rootJoinId] {
+			if joinIdVal, ok := row[rootJoinId]; ok {
+				joinIdValStr := utils.ToString(joinIdVal, "")
+				if idx, exists := keyMap[joinIdValStr]; exists {
+					for k, v := range row {
+						featuresResult[idx][k] = v
+					}
+				}
+			}
+		}
+	}
+	if len(m.childEntitiesMap) == 0 {
+		return featuresResult, nil
+	}
+
+	// merge features of child entities
+	childFeatureIndex := make(map[string]map[string]map[string]interface{}) // join id : key : row values
+	for childJoinId, rows := range joinIdFeaturesMap {
+		if m.rootJoinIdSet[childJoinId] {
+			continue
+		}
+
+		keyToRow := make(map[string]map[string]interface{})
+		for _, row := range rows {
+			if val, ok := row[childJoinId]; ok {
+				valStr := utils.ToString(val, "")
+				if valStr != "" {
+					keyToRow[valStr] = row
+				}
+			}
+		}
+		childFeatureIndex[childJoinId] = keyToRow
+	}
+	for _, rootJoinId := range m.featureEntityJoinIdList {
+		if children, ok := m.childEntitiesMap[rootJoinId]; ok {
+			for _, childJoinId := range children {
+				if childIndex, ok := childFeatureIndex[childJoinId]; ok {
+					for i := 0; i < size; i++ {
+						if rootChildVal, exists := featuresResult[i][childJoinId]; exists && rootChildVal != nil {
+							keyStr := utils.ToString(rootChildVal, "")
+							if keyStr == "" {
+								continue
+							}
+							if childRow, found := childIndex[keyStr]; found {
+								for k, v := range childRow {
+									featuresResult[i][k] = v
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return featuresResult, nil
 }
 
@@ -130,16 +244,17 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 	if !ok {
 		return nil, fmt.Errorf("feature entity name:%s not found", featureEntityName)
 	}
-	size := -1
-	if _, ok := joinIds[featureEntity.FeatureEntityJoinid]; !ok {
-		return nil, fmt.Errorf("join id:%s not found", featureEntity.FeatureEntityJoinid)
+	joinId := featureEntity.FeatureEntityJoinid
+	keys, ok := joinIds[joinId]
+	if !ok {
+		return nil, fmt.Errorf("join id:%s not found", joinId)
 	}
 
-	size = len(joinIds[featureEntity.FeatureEntityJoinid])
+	size := len(keys)
 
 	var wg sync.WaitGroup
 	joinIdFeaturesMap := make(map[string][]map[string]interface{})
-	featureViewMap := m.featureEntityJoinIdMap[featureEntity.FeatureEntityJoinid]
+	featureViewMap := m.featureEntityJoinIdMap[joinId]
 
 	var mu sync.Mutex
 
@@ -159,21 +274,109 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 	}
 	wg.Wait()
 
-	featuresResult := make([]map[string]interface{}, 0, size)
+	featuresResult := make([]map[string]interface{}, size)
 	for i := 0; i < size; i++ {
-		features := make(map[string]interface{}, len(m.Features))
-		joinIdValue := joinIds[featureEntity.FeatureEntityJoinid][i]
-		for _, joinIdFeatures := range joinIdFeaturesMap[featureEntity.FeatureEntityJoinid] {
-			if utils.ToString(joinIdFeatures[featureEntity.FeatureEntityJoinid], "") == utils.ToString(joinIdValue, " ") {
-				for k, v := range joinIdFeatures {
-					features[k] = v
+		featuresResult[i] = make(map[string]interface{})
+	}
+	keyToIdx := make(map[string]int)
+	for idx, key := range keys {
+		keyToIdx[utils.ToString(key, "")] = idx
+	}
+	for _, row := range joinIdFeaturesMap[joinId] {
+		if joinIdVal, ok := row[joinId]; ok {
+			joinIdValStr := utils.ToString(joinIdVal, "")
+			if idx, exists := keyToIdx[joinIdValStr]; exists {
+				for k, v := range row {
+					featuresResult[idx][k] = v
+				}
+			}
+		}
+	}
+
+	// get features of child entities if exist
+	if children := m.childEntitiesMap[joinId]; len(children) > 0 {
+		// read keys of child entities with deduplication
+		childJoinIdKeys := make(map[string][]interface{})
+		childJoinIdKeySet := make(map[string]map[string]struct{})
+		for _, row := range joinIdFeaturesMap[joinId] {
+			for _, childJoinId := range children {
+				if val, exists := row[childJoinId]; exists && val != nil {
+					valStr := utils.ToString(val, "")
+					if valStr == "" {
+						continue
+					}
+					if childJoinIdKeySet[childJoinId] == nil {
+						childJoinIdKeySet[childJoinId] = make(map[string]struct{})
+					}
+					if _, seen := childJoinIdKeySet[childJoinId][valStr]; !seen {
+						childJoinIdKeySet[childJoinId][valStr] = struct{}{}
+						childJoinIdKeys[childJoinId] = append(childJoinIdKeys[childJoinId], val)
+					}
 				}
 			}
 		}
 
-		featuresResult = append(featuresResult, features)
+		// read features of child entities
+		if len(childJoinIdKeys) > 0 {
+			var childWg sync.WaitGroup
+			for childJoinId, keys := range childJoinIdKeys {
+				if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
+					for _, featureView := range featureViewMap {
+						childWg.Add(1)
+						go func(featureView FeatureView, joinId string, keys []interface{}) {
+							defer childWg.Done()
+							features, err := featureView.GetOnlineFeatures(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+							if err != nil {
+								fmt.Println(err)
+							}
 
+							mu.Lock()
+							joinIdFeaturesMap[joinId] = append(joinIdFeaturesMap[joinId], features...)
+							mu.Unlock()
+						}(featureView, childJoinId, keys)
+					}
+				}
+			}
+			childWg.Wait()
+		}
+
+		// merge features of child entities
+		childFeatureIndex := make(map[string]map[string]map[string]interface{}) // join id : key : row values
+		for childJoinId, rows := range joinIdFeaturesMap {
+			if m.rootJoinIdSet[childJoinId] {
+				continue
+			}
+
+			keyToRow := make(map[string]map[string]interface{})
+			for _, row := range rows {
+				if val, ok := row[childJoinId]; ok {
+					valStr := utils.ToString(val, "")
+					if valStr != "" {
+						keyToRow[valStr] = row
+					}
+				}
+			}
+			childFeatureIndex[childJoinId] = keyToRow
+		}
+		for _, childJoinId := range children {
+			if childIndex, ok := childFeatureIndex[childJoinId]; ok {
+				for i := 0; i < size; i++ {
+					if rootChildVal, exists := featuresResult[i][childJoinId]; exists && rootChildVal != nil {
+						keyStr := utils.ToString(rootChildVal, "")
+						if keyStr == "" {
+							continue
+						}
+						if childRow, found := childIndex[keyStr]; found {
+							for k, v := range childRow {
+								featuresResult[i][k] = v
+							}
+						}
+					}
+				}
+			}
+		}
 	}
+
 	return featuresResult, nil
 }
 

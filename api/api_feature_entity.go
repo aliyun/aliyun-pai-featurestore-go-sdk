@@ -3,7 +3,7 @@ package api
 import (
 	"strconv"
 
-	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v4/client"
+	paifeaturestore "github.com/alibabacloud-go/paifeaturestore-20230621/v6/client"
 )
 
 type FeatureEntityApiService service
@@ -39,9 +39,13 @@ func (a *FeatureEntityApiService) ListFeatureEntities(pagesize, pagenumber int32
 				FeatureEntityName:   *entity.Name,
 				FeatureEntityJoinid: *entity.JoinId,
 				ProjectName:         *entity.ProjectName,
+				ParentJoinId:        *entity.ParentJoinId,
 			}
 			if id, err := strconv.Atoi(*entity.ProjectId); err == nil {
 				featureEntity.ProjectId = id
+			}
+			if id, err := strconv.Atoi(*entity.ParentFeatureEntityId); err == nil {
+				featureEntity.ParentFeatureEntityId = id
 			}
 
 			featureEntities = append(featureEntities, &featureEntity)
