@@ -39,13 +39,17 @@ func (a *FeatureEntityApiService) ListFeatureEntities(pagesize, pagenumber int32
 				FeatureEntityName:   *entity.Name,
 				FeatureEntityJoinid: *entity.JoinId,
 				ProjectName:         *entity.ProjectName,
-				ParentJoinId:        *entity.ParentJoinId,
+			}
+			if entity.ParentJoinId != nil {
+				featureEntity.ParentJoinId = *entity.ParentJoinId
 			}
 			if id, err := strconv.Atoi(*entity.ProjectId); err == nil {
 				featureEntity.ProjectId = id
 			}
-			if id, err := strconv.Atoi(*entity.ParentFeatureEntityId); err == nil {
-				featureEntity.ParentFeatureEntityId = id
+			if entity.ParentFeatureEntityId != nil {
+				if id, err := strconv.Atoi(*entity.ParentFeatureEntityId); err == nil {
+					featureEntity.ParentFeatureEntityId = id
+				}
 			}
 
 			featureEntities = append(featureEntities, &featureEntity)
