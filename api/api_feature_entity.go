@@ -40,9 +40,6 @@ func (a *FeatureEntityApiService) ListFeatureEntities(pagesize, pagenumber int32
 				FeatureEntityJoinid: *entity.JoinId,
 				ProjectName:         *entity.ProjectName,
 			}
-			if entity.ParentJoinId != nil {
-				featureEntity.ParentJoinId = *entity.ParentJoinId
-			}
 			if id, err := strconv.Atoi(*entity.ProjectId); err == nil {
 				featureEntity.ProjectId = id
 			}
@@ -50,6 +47,12 @@ func (a *FeatureEntityApiService) ListFeatureEntities(pagesize, pagenumber int32
 				if id, err := strconv.Atoi(*entity.ParentFeatureEntityId); err == nil {
 					featureEntity.ParentFeatureEntityId = id
 				}
+			}
+			if entity.ParentFeatureEntityName != nil {
+				featureEntity.ParentFeatureEntityName = *entity.ParentFeatureEntityName
+			}
+			if entity.ParentJoinId != nil {
+				featureEntity.ParentJoinId = *entity.ParentJoinId
 			}
 
 			featureEntities = append(featureEntities, &featureEntity)
