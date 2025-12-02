@@ -3,6 +3,7 @@ package featurestore
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"fortio.org/assert"
@@ -19,7 +20,7 @@ func createFeatureSotreClient() (*FeatureStoreClient, error) {
 	fdbUser := os.Getenv("FEATUREDB_USERNAME")
 	fdbPassword := os.Getenv("FEATUREDB_PASSWORD")
 
-	return NewFeatureStoreClient("cn-shenzhen", accessId, accessKey, "fdb_test", WithDomain("paifeaturestore.cn-shenzhen.aliyuncs.com"),
+	return NewFeatureStoreClient("cn-beijing", accessId, accessKey, "fs_demo_featuredb", WithDomain("paifeaturestore.cn-beijing.aliyuncs.com"),
 		WithTestMode(), WithFeatureDBLogin(fdbUser, fdbPassword))
 
 }
@@ -109,13 +110,44 @@ func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
 	}
 
 	// get online features
-	features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"199636459", "192535056"}, []string{"*"}, nil)
+	features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"133741583", "187524585"}, []string{"*"}, nil)
+
+	if err != nil {
+		t.Error(err)
+	}
+	size1 := 0
+	for _, feature := range features {
+		if feature != nil {
+			for k, value := range feature {
+				if value != "" && k != "user_id" {
+					strs := strings.Split(value.(string), ";")
+					fmt.Println(k, strs)
+					size1 += len(strs)
+					break
+				}
+			}
+		}
+	}
+
+	fmt.Println(features)
+	result, err := seq_feature_view.GetOnlineAggregatedFeatures([]interface{}{"133741583", "187524585"}, []string{"*"}, nil)
 
 	if err != nil {
 		t.Error(err)
 	}
 
-	fmt.Println(features)
+	fmt.Println(result)
+	size2 := 0
+	for k, value := range result {
+		if k != "user_id" {
+			strs := strings.Split(value.(string), ";")
+			fmt.Println(k, strs)
+			size2 += len(strs)
+			break
+
+		}
+	}
+	assert.Equal(t, size1, size2)
 }
 func TestWriteBloomKV(t *testing.T) {
 	// init client
