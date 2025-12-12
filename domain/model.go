@@ -207,8 +207,14 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 		for _, row := range rows {
 			if val, ok := row[childJoinId]; ok {
 				valStr := utils.ToString(val, "")
-				if valStr != "" {
-					keyToRow[valStr] = row
+				if valStr == "" {
+					continue
+				}
+				if keyToRow[valStr] == nil {
+					keyToRow[valStr] = make(map[string]interface{})
+				}
+				for k, v := range row {
+					keyToRow[valStr][k] = v
 				}
 			}
 		}
@@ -351,8 +357,14 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 			for _, row := range rows {
 				if val, ok := row[childJoinId]; ok {
 					valStr := utils.ToString(val, "")
-					if valStr != "" {
-						keyToRow[valStr] = row
+					if valStr == "" {
+						continue
+					}
+					if keyToRow[valStr] == nil {
+						keyToRow[valStr] = make(map[string]interface{})
+					}
+					for k, v := range row {
+						keyToRow[valStr][k] = v
 					}
 				}
 			}
