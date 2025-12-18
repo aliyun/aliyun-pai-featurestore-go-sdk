@@ -289,6 +289,47 @@ func TestExpr(t *testing.T) {
 		}
 	}
 }
+func TestExtractVariables(t *testing.T) {
+	//code := `(age < 30 && (3 <= level < 5) && sex=='male') `
+	testcases := []struct {
+		code   string
+		expect []string
+	}{
+		{
+			code:   "metric_value > 6",
+			expect: []string{"metric_value"},
+		},
+		{
+			code:   "6 < metric_value ",
+			expect: []string{"metric_value"},
+		},
+		{
+			code:   "sex == 'male'",
+			expect: []string{"sex"},
+		},
+		{
+			code:   "metric_value > 6 && sex == 'male'",
+			expect: []string{"metric_value", "sex"},
+		},
+		{
+			code:   "metric_value > 6 && sex == 'male' || os != 'ALL'",
+			expect: []string{"metric_value", "os", "sex"},
+		},
+		{
+			code:   "(metric_value > 6 && sex == 'male') || (os != 'ALL')",
+			expect: []string{"metric_value", "os", "sex"},
+		},
+		{
+			code:   "(age < 30 && (3 <= level < 5) && sex=='male')",
+			expect: []string{"age", "level", "sex"},
+		},
+	}
+	for _, tcase := range testcases {
+		params, err := dao.ExtractVariables(tcase.code)
+		assert.NoError(t, err)
+		assert.Equal(t, params, tcase.expect)
+	}
+}
 
 func TestGetFeatureViewRowCount(t *testing.T) {
 
@@ -324,7 +365,7 @@ func TestFeatureViewRowIdCount(t *testing.T) {
 
 	t.Run("featuredb test", func(t *testing.T) {
 		// get project by name
-		project, err := client.GetProject("fdb_test")
+		project, err := client.GetProject("fs_demo_featuredb")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -333,10 +374,10 @@ func TestFeatureViewRowIdCount(t *testing.T) {
 		if user_feature_view == nil {
 			t.Fatal("feature view not exist")
 		}
-		ids, count1, err := user_feature_view.RowCountIds("boolean_field==false")
+		ids, count1, err := user_feature_view.RowCountIds("int32_field >= 0")
 		assert.Equal(t, nil, err)
 		assert.Equal(t, count1, len(ids))
-		_, count2, _ := user_feature_view.RowCountIds("boolean_field") // true
+		_, count2, _ := user_feature_view.RowCountIds("int32_field < 0") // true
 
 		_, total, _ := user_feature_view.RowCountIds("") // true
 		assert.Equal(t, count1+count2, total)

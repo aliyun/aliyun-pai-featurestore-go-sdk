@@ -2,12 +2,16 @@ package dao
 
 import (
 	"fmt"
+	"log"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
+	"github.com/expr-lang/expr/ast"
+	"github.com/expr-lang/expr/parser"
 )
 
 type FeatureViewDao interface {
@@ -180,4 +184,77 @@ func combineBehaviorFeatures(offlineBehaviorInfo, onlineBehaviorInfo []map[strin
 		onlineBehaviorInfo = append(onlineBehaviorInfo, offlineBehaviorInfo...)
 	}
 	return onlineBehaviorInfo
+}
+
+// ExtractVariables 从 expr 表达式字符串中解析并提取所有变量名。
+func ExtractVariables(code string) ([]string, error) {
+	tree, err := parser.Parse(code)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse expression: %w", err)
+	}
+
+	variables := make(map[string]struct{})
+	walk(tree.Node, variables)
+
+	var result []string
+	for v := range variables {
+		result = append(result, v)
+	}
+
+	sort.Strings(result)
+
+	return result, nil
+}
+
+// walk 是一个递归函数，用于遍历 AST 并提取变量名
+func walk(node ast.Node, variables map[string]struct{}) {
+	if node == nil {
+		return
+	}
+
+	switch n := node.(type) {
+	case *ast.IdentifierNode:
+		variables[n.Value] = struct{}{}
+
+	case *ast.BinaryNode:
+		walk(n.Left, variables)
+		walk(n.Right, variables)
+
+	case *ast.UnaryNode:
+		walk(n.Node, variables)
+
+	case *ast.MemberNode:
+		walk(n.Node, variables)
+
+	case *ast.CallNode:
+		for _, arg := range n.Arguments {
+			walk(arg, variables)
+		}
+		walk(n.Callee, variables)
+
+	case *ast.ConditionalNode:
+		walk(n.Cond, variables)
+		walk(n.Exp1, variables)
+		walk(n.Exp2, variables)
+
+	case *ast.ArrayNode:
+		for _, elem := range n.Nodes {
+			walk(elem, variables)
+		}
+
+	case *ast.MapNode:
+		for _, pair := range n.Pairs {
+			walk(pair, variables)
+		}
+
+	case *ast.PairNode:
+		walk(n.Key, variables)
+		walk(n.Value, variables)
+
+	case *ast.NilNode, *ast.IntegerNode, *ast.FloatNode, *ast.BoolNode, *ast.StringNode:
+		// Do nothing
+
+	default:
+		log.Printf("unhandled node type: %T\n", n)
+	}
 }
