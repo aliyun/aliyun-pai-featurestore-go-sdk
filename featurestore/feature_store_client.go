@@ -137,7 +137,7 @@ type FeatureStoreClient struct {
 func NewFeatureStoreClient(regionId, accessKeyId, accessKeySecret, projectName string, opts ...ClientOption) (fsclient *FeatureStoreClient, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			//err = fmt.Errorf("error: %v", r)
+			err = fmt.Errorf("error: %v", r)
 		}
 	}()
 	client := FeatureStoreClient{
