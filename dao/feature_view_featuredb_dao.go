@@ -53,29 +53,23 @@ type FeatureViewFeatureDBDao struct {
 	primaryKeyField string
 }
 
-func CntSkipBytes(innerReader *bytes.Reader, fieldType constants.FSType) int {
-	var skipBytes int = 0
+func SkipBaseTypeBytes(dataCursor *utils.ByteCursor, fieldType constants.FSType) {
 	switch fieldType {
 	case constants.FS_INT32:
-		skipBytes = 4
+		dataCursor.Skip(4)
 	case constants.FS_INT64:
-		skipBytes = 8
+		dataCursor.Skip(8)
 	case constants.FS_FLOAT:
-		skipBytes = 4
+		dataCursor.Skip(4)
 	case constants.FS_DOUBLE:
-		skipBytes = 8
+		dataCursor.Skip(8)
 	case constants.FS_STRING:
-		var length uint32
-		binary.Read(innerReader, binary.LittleEndian, &length)
-		skipBytes = int(length)
+		dataCursor.Skip(int(dataCursor.ReadUint32()))
 	case constants.FS_BOOLEAN:
-		skipBytes = 1
+		dataCursor.Skip(1)
 	default:
-		var length uint32
-		binary.Read(innerReader, binary.LittleEndian, &length)
-		skipBytes = int(length)
+		dataCursor.Skip(int(dataCursor.ReadUint32()))
 	}
-	return skipBytes
 }
 
 func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
@@ -182,10 +176,11 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 			}
 
 			reader := bufio.NewReader(response.Body)
+			headerBuf := make([]byte, 4)
 			keyStartIdx := 0
 			innerResult := make([]map[string]interface{}, 0, len(ks))
 			for {
-				buf, err := deserialize(reader)
+				buf, err := deserialize(reader, headerBuf)
 				if err == io.EOF {
 					break // End of stream
 				}
@@ -665,10 +660,9 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 		}
 
 		reader := bufio.NewReader(response.Body)
-		innerReader := readerPool.Get().(*bytes.Reader)
-		defer readerPool.Put(innerReader)
+		headerBuf := make([]byte, 4)
 		for {
-			buf, err := deserialize(reader)
+			buf, err := deserialize(reader, headerBuf)
 			if err == io.EOF {
 				break // End of stream
 			}
@@ -722,69 +716,45 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 					sequences = append(sequences, seq)
 					continue
 				}
-				innerReader.Reset(dataBytes)
+				dataCursor := utils.NewByteCursor(dataBytes)
 				// 读取版本号
-				var protocalVersion, ifNullFlagVersion uint8
-				binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
-				binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
+				protocalVersion := dataCursor.ReadUint8()
+				ifNullFlagVersion := dataCursor.ReadUint8()
 				readFeatureDBFunc_F_1 := func() (map[string]string, error) {
 					properties := make(map[string]string)
 
 					for _, field := range d.fields {
-						var isNull uint8
-						if err := binary.Read(innerReader, binary.LittleEndian, &isNull); err != nil {
-							if err == io.EOF {
-								break
-							}
-							return nil, err
+						isNull, ok := dataCursor.TryReadUint8()
+						if !ok {
+							// EOF
+							break
 						}
 						if isNull == 1 {
 							// 跳过空值
 							continue
 						}
 
-						if _, exists := selectBehaviorFieldsSet[field]; exists {
-							switch d.fieldTypeMap[field] {
+						fieldType := d.fieldTypeMap[field]
+						_, isSelected := selectBehaviorFieldsSet[field]
+						if isSelected {
+							switch fieldType {
 							case constants.FS_INT32:
-								var int32Value int32
-								binary.Read(innerReader, binary.LittleEndian, &int32Value)
-								properties[field] = fmt.Sprintf("%d", int32Value)
+								properties[field] = fmt.Sprintf("%d", dataCursor.ReadInt32())
 							case constants.FS_INT64:
-								var int64Value int64
-								binary.Read(innerReader, binary.LittleEndian, &int64Value)
-								properties[field] = fmt.Sprintf("%d", int64Value)
+								properties[field] = fmt.Sprintf("%d", dataCursor.ReadInt64())
 							case constants.FS_FLOAT:
-								var float32Value float32
-								binary.Read(innerReader, binary.LittleEndian, &float32Value)
-								properties[field] = fmt.Sprintf("%v", float32Value)
+								properties[field] = fmt.Sprintf("%v", dataCursor.ReadFloat32())
 							case constants.FS_DOUBLE:
-								var float64Value float64
-								binary.Read(innerReader, binary.LittleEndian, &float64Value)
-								properties[field] = fmt.Sprintf("%v", float64Value)
+								properties[field] = fmt.Sprintf("%v", dataCursor.ReadFloat64())
 							case constants.FS_STRING:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								strBytes := make([]byte, length)
-								binary.Read(innerReader, binary.LittleEndian, &strBytes)
-								properties[field] = string(strBytes)
+								properties[field] = dataCursor.ReadString()
 							case constants.FS_BOOLEAN:
-								var boolValue bool
-								binary.Read(innerReader, binary.LittleEndian, &boolValue)
-								properties[field] = fmt.Sprintf("%v", boolValue)
+								properties[field] = fmt.Sprintf("%v", dataCursor.ReadBool())
 							default:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								strBytes := make([]byte, length)
-								binary.Read(innerReader, binary.LittleEndian, &strBytes)
-								properties[field] = string(strBytes)
+								properties[field] = dataCursor.ReadString()
 							}
 						} else {
-							skipBytes := CntSkipBytes(innerReader, d.fieldTypeMap[field])
-							if skipBytes > 0 {
-								if _, err := innerReader.Seek(int64(skipBytes), io.SeekCurrent); err != nil {
-									return nil, err
-								}
-							}
+							SkipBaseTypeBytes(dataCursor, d.fieldTypeMap[field])
 						}
 					}
 					return properties, nil
@@ -966,10 +936,9 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 		}
 
 		reader := bufio.NewReader(response.Body)
-		innerReader := readerPool.Get().(*bytes.Reader)
-		defer readerPool.Put(innerReader)
+		headerBuf := make([]byte, 4)
 		for {
-			buf, err := deserialize(reader)
+			buf, err := deserialize(reader, headerBuf)
 			if err == io.EOF {
 				break // End of stream
 			}
@@ -1023,69 +992,45 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 					sequences = append(sequences, seq)
 					continue
 				}
-				innerReader.Reset(dataBytes)
+				dataCursor := utils.NewByteCursor(dataBytes)
 				// 读取版本号
-				var protocalVersion, ifNullFlagVersion uint8
-				binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
-				binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
+				protocalVersion := dataCursor.ReadUint8()
+				ifNullFlagVersion := dataCursor.ReadUint8()
 				readFeatureDBFunc_F_1 := func() (map[string]string, error) {
 					properties := make(map[string]string)
 
 					for _, field := range d.fields {
-						var isNull uint8
-						if err := binary.Read(innerReader, binary.LittleEndian, &isNull); err != nil {
-							if err == io.EOF {
-								break
-							}
-							return nil, err
+						isNull, ok := dataCursor.TryReadUint8()
+						if !ok {
+							// EOF
+							break
 						}
 						if isNull == 1 {
 							// 跳过空值
 							continue
 						}
 
-						if _, exists := selectBehaviorFieldsSet[field]; exists {
-							switch d.fieldTypeMap[field] {
+						fieldType := d.fieldTypeMap[field]
+						_, isSelected := selectBehaviorFieldsSet[field]
+						if isSelected {
+							switch fieldType {
 							case constants.FS_INT32:
-								var int32Value int32
-								binary.Read(innerReader, binary.LittleEndian, &int32Value)
-								properties[field] = fmt.Sprintf("%d", int32Value)
+								properties[field] = fmt.Sprintf("%d", dataCursor.ReadInt32())
 							case constants.FS_INT64:
-								var int64Value int64
-								binary.Read(innerReader, binary.LittleEndian, &int64Value)
-								properties[field] = fmt.Sprintf("%d", int64Value)
+								properties[field] = fmt.Sprintf("%d", dataCursor.ReadInt64())
 							case constants.FS_FLOAT:
-								var float32Value float32
-								binary.Read(innerReader, binary.LittleEndian, &float32Value)
-								properties[field] = fmt.Sprintf("%v", float32Value)
+								properties[field] = fmt.Sprintf("%v", dataCursor.ReadFloat32())
 							case constants.FS_DOUBLE:
-								var float64Value float64
-								binary.Read(innerReader, binary.LittleEndian, &float64Value)
-								properties[field] = fmt.Sprintf("%v", float64Value)
+								properties[field] = fmt.Sprintf("%v", dataCursor.ReadFloat64())
 							case constants.FS_STRING:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								strBytes := make([]byte, length)
-								binary.Read(innerReader, binary.LittleEndian, &strBytes)
-								properties[field] = string(strBytes)
+								properties[field] = dataCursor.ReadString()
 							case constants.FS_BOOLEAN:
-								var boolValue bool
-								binary.Read(innerReader, binary.LittleEndian, &boolValue)
-								properties[field] = fmt.Sprintf("%v", boolValue)
+								properties[field] = fmt.Sprintf("%v", dataCursor.ReadBool())
 							default:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								strBytes := make([]byte, length)
-								binary.Read(innerReader, binary.LittleEndian, &strBytes)
-								properties[field] = string(strBytes)
+								properties[field] = dataCursor.ReadString()
 							}
 						} else {
-							skipBytes := CntSkipBytes(innerReader, d.fieldTypeMap[field])
-							if skipBytes > 0 {
-								if _, err := innerReader.Seek(int64(skipBytes), io.SeekCurrent); err != nil {
-									return nil, err
-								}
-							}
+							SkipBaseTypeBytes(dataCursor, d.fieldTypeMap[field])
 						}
 					}
 					return properties, nil
@@ -1266,10 +1211,9 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 		}
 
 		reader := bufio.NewReader(response.Body)
-		innerReader := readerPool.Get().(*bytes.Reader)
-		defer readerPool.Put(innerReader)
+		headerBuf := make([]byte, 4)
 		for {
-			buf, err := deserialize(reader)
+			buf, err := deserialize(reader, headerBuf)
 			if err == io.EOF {
 				break // End of stream
 			}
@@ -1287,71 +1231,47 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 					//fmt.Println("userid ", user_id, " not exists")
 					continue
 				}
-				innerReader.Reset(dataBytes)
+				dataCursor := utils.NewByteCursor(dataBytes)
 
 				// 读取版本号
-				var protocalVersion, ifNullFlagVersion uint8
-				binary.Read(innerReader, binary.LittleEndian, &protocalVersion)
-				binary.Read(innerReader, binary.LittleEndian, &ifNullFlagVersion)
+				protocalVersion := dataCursor.ReadUint8()
+				ifNullFlagVersion := dataCursor.ReadUint8()
 
 				readFeatureDBFunc_F_1 := func() (map[string]interface{}, error) {
 					properties := make(map[string]interface{})
 
 					for _, field := range d.fields {
-						var isNull uint8
-						if err := binary.Read(innerReader, binary.LittleEndian, &isNull); err != nil {
-							if err == io.EOF {
-								break
-							}
-							return nil, err
+						isNull, ok := dataCursor.TryReadUint8()
+						if !ok {
+							// EOF
+							break
 						}
 						if isNull == 1 {
 							// 跳过空值
 							continue
 						}
 
-						if _, exists := selectFieldsSet[field]; exists {
-							switch d.fieldTypeMap[field] {
+						fieldType := d.fieldTypeMap[field]
+						_, isSelected := selectFieldsSet[field]
+						if isSelected {
+							switch fieldType {
 							case constants.FS_INT32:
-								var int32Value int32
-								binary.Read(innerReader, binary.LittleEndian, &int32Value)
-								properties[field] = int32Value
+								properties[field] = dataCursor.ReadInt32()
 							case constants.FS_INT64:
-								var int64Value int64
-								binary.Read(innerReader, binary.LittleEndian, &int64Value)
-								properties[field] = int64Value
+								properties[field] = dataCursor.ReadInt64()
 							case constants.FS_FLOAT:
-								var float32Value float32
-								binary.Read(innerReader, binary.LittleEndian, &float32Value)
-								properties[field] = float32Value
+								properties[field] = dataCursor.ReadFloat32()
 							case constants.FS_DOUBLE:
-								var float64Value float64
-								binary.Read(innerReader, binary.LittleEndian, &float64Value)
-								properties[field] = float64Value
+								properties[field] = dataCursor.ReadFloat64()
 							case constants.FS_STRING:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								strBytes := make([]byte, length)
-								binary.Read(innerReader, binary.LittleEndian, &strBytes)
-								properties[field] = string(strBytes)
+								properties[field] = dataCursor.ReadString()
 							case constants.FS_BOOLEAN:
-								var boolValue bool
-								binary.Read(innerReader, binary.LittleEndian, &boolValue)
-								properties[field] = boolValue
+								properties[field] = dataCursor.ReadBool()
 							default:
-								var length uint32
-								binary.Read(innerReader, binary.LittleEndian, &length)
-								strBytes := make([]byte, length)
-								binary.Read(innerReader, binary.LittleEndian, &strBytes)
-								properties[field] = string(strBytes)
+								properties[field] = dataCursor.ReadString()
 							}
 						} else {
-							skipBytes := CntSkipBytes(innerReader, d.fieldTypeMap[field])
-							if skipBytes > 0 {
-								if _, err := innerReader.Seek(int64(skipBytes), io.SeekCurrent); err != nil {
-									return nil, err
-								}
-							}
+							SkipBaseTypeBytes(dataCursor, d.fieldTypeMap[field])
 						}
 					}
 					return properties, nil
@@ -1398,14 +1318,17 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 	return results, nil
 }
 
-func deserialize(r io.Reader) ([]byte, error) {
-	var length uint32
-	err := binary.Read(r, binary.LittleEndian, &length)
-	if err != nil {
+func deserialize(r *bufio.Reader, headerBuf []byte) ([]byte, error) {
+	if _, err := io.ReadFull(r, headerBuf); err != nil {
 		return nil, err
 	}
+	length := binary.LittleEndian.Uint32(headerBuf)
+	if length == 0 {
+		return []byte{}, nil
+	}
+
 	data := make([]byte, length)
-	_, err = io.ReadFull(r, data)
+	_, err := io.ReadFull(r, data)
 	if err != nil {
 		return nil, err
 	}
