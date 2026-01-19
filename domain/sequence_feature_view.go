@@ -239,6 +239,10 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 	return sequenceFeatureResults, err
 }
 
+func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeatures(joinIds, features, alias)
+}
+
 func (f *SequenceFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
 	var selectFields []string
 	seenFields := make(map[string]bool)

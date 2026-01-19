@@ -50,7 +50,7 @@ func NewFeatureViewTableStoreDao(config DaoConfig) *FeatureViewTableStoreDao {
 
 }
 
-func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
+func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0, len(keys))
 	var wg sync.WaitGroup
 	var mu sync.Mutex

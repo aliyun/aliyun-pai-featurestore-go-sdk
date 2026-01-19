@@ -173,7 +173,7 @@ func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []st
 		}
 	}
 
-	featureResult, err := f.featureViewDao.GetFeatures(joinIds, selectFields)
+	featureResult, err := f.featureViewDao.GetFeatures(joinIds, selectFields, 1)
 
 	if f.primaryKeyField.Name != f.FeatureEntity.FeatureEntityJoinid {
 		for _, featureMap := range featureResult {
@@ -193,6 +193,69 @@ func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []st
 
 	return featureResult, err
 
+}
+
+func (f *BaseFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	var selectFields []string
+	selectFields = append(selectFields, f.primaryKeyField.Name)
+	seenFields := make(map[string]bool)
+	seenFields[f.primaryKeyField.Name] = true
+	for _, featureName := range features {
+		if featureName == "*" {
+			selectFields = append(selectFields, f.featureFields...)
+		} else {
+			if seenFields[featureName] {
+				continue
+			}
+			found := false
+			for _, field := range f.featureFields {
+				if field == featureName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return nil, fmt.Errorf("feature name :%s not found in the featureview fields", featureName)
+			}
+
+			selectFields = append(selectFields, featureName)
+			seenFields[featureName] = true
+		}
+	}
+
+	for featureName := range alias {
+		found := false
+
+		for _, field := range f.featureFields {
+			if field == featureName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("feature name :%s not found in the featureview fields", featureName)
+		}
+	}
+
+	featureResult, err := f.featureViewDao.GetFeatures(joinIds, selectFields, count)
+
+	if f.primaryKeyField.Name != f.FeatureEntity.FeatureEntityJoinid {
+		for _, featureMap := range featureResult {
+			featureMap[f.FeatureEntity.FeatureEntityJoinid] = featureMap[f.primaryKeyField.Name]
+			delete(featureMap, f.primaryKeyField.Name)
+		}
+	}
+
+	for featureName, aliasName := range alias {
+		for _, featureMap := range featureResult {
+			if _, ok := featureMap[featureName]; ok {
+				featureMap[aliasName] = featureMap[featureName]
+				delete(featureMap, featureName)
+			}
+		}
+	}
+
+	return featureResult, err
 }
 
 func (f *BaseFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {

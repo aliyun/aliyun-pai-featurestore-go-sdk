@@ -54,7 +54,7 @@ func (d *FeatureViewHologresDao) getStmt(key uint32) *sql.Stmt {
 	defer d.mu.RUnlock()
 	return d.stmtMap[key]
 }
-func (d *FeatureViewHologresDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
+func (d *FeatureViewHologresDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 
 	selector := make([]string, 0, len(selectFields))
 	for _, field := range selectFields {
