@@ -10,30 +10,32 @@ import (
 
 type Model struct {
 	*api.Model
-	project                 *Project
-	featureViewMap          map[string]FeatureView
-	featureEntityMap        map[string]*FeatureEntity
-	featureNamesMap         map[string][]string               // featureview : feature names
-	aliasNamesMap           map[string]map[string]string      // featureview : alias names
-	featureEntityJoinIdMap  map[string]map[string]FeatureView // feature entity joinid : featureviews
-	featureEntityJoinIdList []string                          // slice of root feature entity joinids
-	rootJoinIdSet           map[string]bool                   // set of root feature entity joinids
-	childEntitiesMap        map[string][]string               // parent joinid : children's joinid
-	labelTable              *LabelTable
+	project                   *Project
+	featureViewMap            map[string]FeatureView
+	featureEntityMap          map[string]*FeatureEntity
+	featureNamesMap           map[string][]string               // featureview : feature names
+	aliasNamesMap             map[string]map[string]string      // featureview : alias names
+	featureEntityJoinIdMap    map[string]map[string]FeatureView // feature entity joinid : featureviews
+	featureEntityJoinIdList   []string                          // slice of root feature entity joinids
+	rootJoinIdSet             map[string]bool                   // set of root feature entity joinids
+	childEntitiesMap          map[string][]string               // parent joinid : children's joinid
+	joinIdFeatureViewCountMap map[string]int                    // joinid: feature view count
+	labelTable                *LabelTable
 }
 
 func NewModel(model *api.Model, p *Project, lt *LabelTable) *Model {
 	m := &Model{
-		Model:                  model,
-		project:                p,
-		labelTable:             lt,
-		featureViewMap:         make(map[string]FeatureView),
-		featureEntityMap:       make(map[string]*FeatureEntity),
-		featureNamesMap:        make(map[string][]string),
-		aliasNamesMap:          make(map[string]map[string]string),
-		featureEntityJoinIdMap: make(map[string]map[string]FeatureView),
-		rootJoinIdSet:          make(map[string]bool),
-		childEntitiesMap:       make(map[string][]string),
+		Model:                     model,
+		project:                   p,
+		labelTable:                lt,
+		featureViewMap:            make(map[string]FeatureView),
+		featureEntityMap:          make(map[string]*FeatureEntity),
+		featureNamesMap:           make(map[string][]string),
+		aliasNamesMap:             make(map[string]map[string]string),
+		featureEntityJoinIdMap:    make(map[string]map[string]FeatureView),
+		rootJoinIdSet:             make(map[string]bool),
+		childEntitiesMap:          make(map[string][]string),
+		joinIdFeatureViewCountMap: make(map[string]int),
 	}
 
 	for _, feature := range m.Features {
@@ -70,6 +72,18 @@ func NewModel(model *api.Model, p *Project, lt *LabelTable) *Model {
 		}
 	}
 
+	for parentJoinId, children := range m.childEntitiesMap {
+		m.joinIdFeatureViewCountMap[parentJoinId] = len(m.featureEntityJoinIdMap[parentJoinId])
+
+		totalCount := 0
+		for _, childJoinId := range children {
+			totalCount += len(m.featureEntityJoinIdMap[childJoinId])
+		}
+		for _, childJoinId := range children {
+			m.joinIdFeatureViewCountMap[childJoinId] = totalCount
+		}
+	}
+
 	return m
 }
 
@@ -98,12 +112,13 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 	for _, rootJoinId := range m.featureEntityJoinIdList {
 		keys := joinIds[rootJoinId]
 		featureViewMap := m.featureEntityJoinIdMap[rootJoinId]
+		featureViewCount := len(featureViewMap)
 
 		for _, featureView := range featureViewMap {
 			wg.Add(1)
-			go func(featureView FeatureView, joinId string, keys []interface{}) {
+			go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 				defer wg.Done()
-				features, err := featureView.GetOnlineFeatures(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+				features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 				if err != nil {
 					fmt.Println(err)
 				}
@@ -112,7 +127,7 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 				joinIdFeaturesMap[joinId] = append(joinIdFeaturesMap[joinId], features...)
 				mu.Unlock()
 
-			}(featureView, rootJoinId, keys)
+			}(featureView, rootJoinId, keys, featureViewCount)
 		}
 	}
 	wg.Wait()
@@ -146,12 +161,13 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 	if len(childJoinIdKeys) > 0 {
 		var childWg sync.WaitGroup
 		for childJoinId, keys := range childJoinIdKeys {
+			featureViewCount := m.joinIdFeatureViewCountMap[childJoinId]
 			if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
 				for _, featureView := range featureViewMap {
 					childWg.Add(1)
-					go func(featureView FeatureView, joinId string, keys []interface{}) {
+					go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 						defer childWg.Done()
-						features, err := featureView.GetOnlineFeatures(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+						features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 						if err != nil {
 							fmt.Println(err)
 						}
@@ -159,7 +175,7 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 						mu.Lock()
 						joinIdFeaturesMap[joinId] = append(joinIdFeaturesMap[joinId], features...)
 						mu.Unlock()
-					}(featureView, childJoinId, keys)
+					}(featureView, childJoinId, keys, featureViewCount)
 				}
 			}
 		}
