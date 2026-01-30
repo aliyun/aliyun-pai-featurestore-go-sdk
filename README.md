@@ -288,13 +288,6 @@ features, err := model_feature.GetOnlineFeaturesWithEntity(map[string][]interfac
 ]
 ```
 
-如果在线数据源是FeatureDB，指定某个 FeatureEntity 读取对应的特征时，建议使用 GetOnlineFeaturesWithEntity2 接口，会对离线和实时特征视图的读取操作进行综合计费（同一个FeatureEntity下的特征数据放在一起计算读取次数），降低读取成本。
-
-```go
-// user 是 FeatureEntity 名称
-features, err := model_feature.GetOnlineFeaturesWithEntity2(map[string][]interface{}{"user_id": {"100000676", "100004208"}}, "user" )
-```
-
 - 获取 ModelFeature 里的特征数据（含序列特征）
 
 注册 ModelFeature 时可以选择 序列特征Feature View里注册的 离线序列特征字段，之后在 FeatureStore Go SDK中便可以获取到对应的 在线序列特征名称。
