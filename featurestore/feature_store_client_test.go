@@ -13,7 +13,7 @@ import (
 	"github.com/expr-lang/expr/ast"
 )
 
-func createFeatureSotreClient() (*FeatureStoreClient, error) {
+func createFeatureStoreClient() (*FeatureStoreClient, error) {
 	accessId := os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
 	accessKey := os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
 
@@ -28,7 +28,7 @@ func createFeatureSotreClient() (*FeatureStoreClient, error) {
 func TestGetFeatureViewOnlineFeatures(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestGetFeatureViewOnlineFeatures(t *testing.T) {
 func TestGetModelFeatureOnlineFeatures(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestGetModelFeatureOnlineFeatures(t *testing.T) {
 func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
 }
 func TestWriteBloomKV(t *testing.T) {
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestWriteBloomKV(t *testing.T) {
 
 func TestBloomItems(t *testing.T) {
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestBloomItems(t *testing.T) {
 }
 func TestDeleteBloomByKey(t *testing.T) {
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestExtractVariables(t *testing.T) {
 func TestGetFeatureViewRowCount(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +358,7 @@ func TestGetFeatureViewRowCount(t *testing.T) {
 func TestFeatureViewRowIdCount(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,7 +388,7 @@ func TestFeatureViewRowIdCount(t *testing.T) {
 func TestScanAndIterateData(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient()
 	if err != nil {
 		t.Fatal(err)
 	}
