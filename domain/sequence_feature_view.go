@@ -68,6 +68,16 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 			}
 		}
 		for _, seqConfig := range nameSeqConfigsMap {
+			uniqueBehaviorFields := make(map[string]bool)
+			var deduplicatedFields []string
+
+			for _, field := range seqConfig.OnlineBehaviorTableFields {
+				if !uniqueBehaviorFields[field] {
+					uniqueBehaviorFields[field] = true
+					deduplicatedFields = append(deduplicatedFields, field)
+				}
+			}
+			seqConfig.OnlineBehaviorTableFields = deduplicatedFields
 			uniqueSeqConfigs = append(uniqueSeqConfigs, seqConfig)
 		}
 		sequenceFeatureView.sequenceConfig.SeqConfig = uniqueSeqConfigs

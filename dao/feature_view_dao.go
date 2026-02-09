@@ -145,15 +145,6 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 	//produce seqeunce feature correspond to easyrec processor
 	sequencesValueMap := make(map[string][]string)
 
-	uniqueBehaviorFields := make(map[string]bool)
-	var deduplicatedFields []string
-
-	for _, field := range seqConfig.OnlineBehaviorTableFields {
-		if !uniqueBehaviorFields[field] {
-			uniqueBehaviorFields[field] = true
-			deduplicatedFields = append(deduplicatedFields, field)
-		}
-	}
 	for _, seq := range sequencesInfos {
 		sequencesValueMap[sequenceConfig.ItemIdField] = append(sequencesValueMap[sequenceConfig.ItemIdField], seq.itemId)
 		sequencesValueMap[sequenceConfig.TimestampField] = append(sequencesValueMap[sequenceConfig.TimestampField], fmt.Sprintf("%d", seq.timestamp))
@@ -162,7 +153,7 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 			sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", seq.playTime))
 		}
 		sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
-		for _, behaviorField := range deduplicatedFields {
+		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
 			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], seq.onlineBehaviourTableFieldsMap[behaviorField])
 		}
 

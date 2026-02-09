@@ -13,28 +13,34 @@ import (
 	"github.com/expr-lang/expr/ast"
 )
 
-func createFeatureStoreClient() (*FeatureStoreClient, error) {
+func createFeatureStoreClient(region, projectName string) (*FeatureStoreClient, error) {
 	accessId := os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
 	accessKey := os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
 
 	fdbUser := os.Getenv("FEATUREDB_USERNAME")
 	fdbPassword := os.Getenv("FEATUREDB_PASSWORD")
 
-	return NewFeatureStoreClient("cn-beijing", accessId, accessKey, "fs_demo_featuredb", WithDomain("paifeaturestore.cn-beijing.aliyuncs.com"),
+	return NewFeatureStoreClient(region, accessId, accessKey, projectName, WithDomain(fmt.Sprintf("paifeaturestore.%s.aliyuncs.com", region)),
 		WithTestMode(), WithFeatureDBLogin(fdbUser, fdbPassword))
 
 }
 
+const (
+	region         = "cn-beijing"
+	projectName    = "fs_demo2"
+	fdbProjectName = "fdb_test"
+)
+
 func TestGetFeatureViewOnlineFeatures(t *testing.T) {
 
 	// init client
-	client, err := createFeatureStoreClient()
+	client, err := createFeatureStoreClient(region, projectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_demo2")
+	project, err := client.GetProject(projectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,16 +63,38 @@ func TestGetFeatureViewOnlineFeatures(t *testing.T) {
 	}
 }
 
+func TestGetSequenceFeatureViewOfSideInfoFeatures(t *testing.T) {
+	fsProjectName := "fdb_test_case"
+	client, err := createFeatureStoreClient(region, fsProjectName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	project, err := client.GetProject(fsProjectName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq_feature_view := project.GetFeatureView("seq_fea_side_info_test2")
+	features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"135313542", "151362919", "160551912"}, []string{"*"}, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	for _, feature := range features {
+		fmt.Println(feature)
+	}
+}
+
 func TestGetModelFeatureOnlineFeatures(t *testing.T) {
 
 	// init client
-	client, err := createFeatureStoreClient()
+	client, err := createFeatureStoreClient(region, projectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_demo2")
+	project, err := client.GetProject(projectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,15 +118,15 @@ func TestGetModelFeatureOnlineFeatures(t *testing.T) {
 }
 
 func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
-
+	fdbProjectName := "fs_demo_featuredb"
 	// init client
-	client, err := createFeatureStoreClient()
+	client, err := createFeatureStoreClient(region, fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_demo_featuredb")
+	project, err := client.GetProject(fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,13 +179,14 @@ func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
 }
 func TestWriteBloomKV(t *testing.T) {
 	// init client
-	client, err := createFeatureStoreClient()
+	fsProjectName := "fdb_test"
+	client, err := createFeatureStoreClient(region, fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fdb_test")
+	project, err := client.GetProject(fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,13 +209,13 @@ func TestWriteBloomKV(t *testing.T) {
 
 func TestBloomItems(t *testing.T) {
 	// init client
-	client, err := createFeatureStoreClient()
+	client, err := createFeatureStoreClient(region, fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fdb_test")
+	project, err := client.GetProject(fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,13 +244,13 @@ func TestBloomItems(t *testing.T) {
 }
 func TestDeleteBloomByKey(t *testing.T) {
 	// init client
-	client, err := createFeatureStoreClient()
+	client, err := createFeatureStoreClient(region, fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fdb_test")
+	project, err := client.GetProject(fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,15 +361,15 @@ func TestExtractVariables(t *testing.T) {
 }
 
 func TestGetFeatureViewRowCount(t *testing.T) {
-
+	fsProjectName := "ceci_test2"
 	// init client
-	client, err := createFeatureStoreClient()
+	client, err := createFeatureStoreClient(region, fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("ceci_test2")
+	project, err := client.GetProject(fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,16 +385,16 @@ func TestGetFeatureViewRowCount(t *testing.T) {
 }
 
 func TestFeatureViewRowIdCount(t *testing.T) {
-
+	fsProjectName := "fs_demo_featuredb"
 	// init client
-	client, err := createFeatureStoreClient()
+	client, err := createFeatureStoreClient(region, fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("featuredb test", func(t *testing.T) {
 		// get project by name
-		project, err := client.GetProject("fs_demo_featuredb")
+		project, err := client.GetProject(fsProjectName)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -388,14 +417,14 @@ func TestFeatureViewRowIdCount(t *testing.T) {
 func TestScanAndIterateData(t *testing.T) {
 
 	// init client
-	client, err := createFeatureStoreClient()
+	client, err := createFeatureStoreClient(region, fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("no channel", func(t *testing.T) {
 		// get project by name
-		project, err := client.GetProject("fdb_test")
+		project, err := client.GetProject(fdbProjectName)
 		if err != nil {
 			t.Fatal(err)
 		}
