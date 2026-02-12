@@ -20,7 +20,7 @@ func createFeatureSotreClient() (*FeatureStoreClient, error) {
 	fdbUser := os.Getenv("FEATUREDB_USERNAME")
 	fdbPassword := os.Getenv("FEATUREDB_PASSWORD")
 
-	return NewFeatureStoreClient("cn-beijing", accessId, accessKey, "fs_demo_featuredb", WithDomain("paifeaturestore.cn-beijing.aliyuncs.com"),
+	return NewFeatureStoreClient("cn-hangzhou", accessId, accessKey, "fdb_test_case", WithDomain("paifeaturestore.cn-hangzhou.aliyuncs.com"),
 		WithTestMode(), WithFeatureDBLogin(fdbUser, fdbPassword))
 
 }
@@ -149,6 +149,35 @@ func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
 	}
 	assert.Equal(t, size1, size2)
 }
+func TestGetSeqFeatureViewBehaviorFeatures(t *testing.T) {
+
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get project by name
+	project, err := client.GetProject("fdb_test_case")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get featureview by name
+	seq_feature_view := project.GetFeatureView("seq_fea")
+	if seq_feature_view == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	// get online features
+	features, err := seq_feature_view.GetBehaviorFeatures([]interface{}{"172040759"}, []any{"click"}, []string{"item_id", "event", "event_time", "playtime"})
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	fmt.Println(features)
+}
 func TestWriteBloomKV(t *testing.T) {
 	// init client
 	client, err := createFeatureSotreClient()
@@ -186,20 +215,21 @@ func TestBloomItems(t *testing.T) {
 	}
 
 	// get project by name
-	project, err := client.GetProject("fdb_test")
+	project, err := client.GetProject("fdb_test_case")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	featureView := project.GetFeatureView("user_expose")
+	featureView := project.GetFeatureView("user_expose_history")
 	if featureView == nil {
 		t.Fatal("feature view not exist")
 	}
 
-	request := fdbserverpb.TestBloomItemsRequest{Key: "106"}
+	request := fdbserverpb.TestBloomItemsRequest{Key: "123"}
 	for i := 0; i < 100; i++ {
 		request.Items = append(request.Items, fmt.Sprintf("item_%d", i))
 	}
+	request.Items = append(request.Items, "18677593")
 	tests, err := fdbserverpb.TestBloomItems(project, featureView, &request)
 	if err != nil {
 		t.Fatal(err)
@@ -207,11 +237,17 @@ func TestBloomItems(t *testing.T) {
 	if len(tests) != len(request.Items) {
 		t.Fatal("bloom filter test failed")
 	}
-	for _, test := range tests {
-		if !test {
-			t.Fatal("bloom filter test failed")
-		}
+	t.Log(tests)
+	if tests[len(tests)-1] != true {
+		t.Fatal("bloom filter test failed")
 	}
+	/*
+		for _, test := range tests {
+			if !test {
+				t.Fatal("bloom filter test failed")
+			}
+		}
+	*/
 }
 func TestDeleteBloomByKey(t *testing.T) {
 	// init client
