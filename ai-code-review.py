@@ -27,7 +27,7 @@ import ssl
 # ───────────────────────────────── 配置 ─────────────────────────────────
 
 BAILIAN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-DEFAULT_MODEL = "qwen-plus"
+DEFAULT_MODEL = "qwen3-coder-plus"
 
 SYSTEM_PROMPT = textwrap.dedent("""\
 你是一位资深的代码审查专家。请对以下 Pull Request 的代码变更进行全面审查，并用中文回复。
@@ -39,13 +39,16 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 4. 性能问题：不必要的计算、内存泄漏、N+1 查询等
 5. 最佳实践：是否符合语言/框架的惯用写法
 
-重要：审查时不仅要看变更的代码（+/- 行），还要结合 diff 中显示的上下文代码一起分析，
-判断变更是否与周围代码逻辑一致、是否引入了上下文相关的 bug。
+【重要】审查时必须结合上下文代码进行分析：
+- diff 中包含了变更行（+/- 开头）以及周围的上下文代码（无 +/- 前缀）
+- 你需要理解上下文代码的逻辑，判断变更是否与周围代码兼容
+- 检查变更是否可能破坏上下文中已有的逻辑或引入不一致
+- 特别注意变更代码与上下文中变量、函数调用、控制流的关系
 
 请严格按照以下 JSON 格式返回结果（不要包裹在 markdown 代码块中，直接返回 JSON）：
 
 {
-  "summary": "总体评价（Markdown 格式），包含：1) 对 PR 的整体评价和优点；2) 按严重程度分类的问题概要；3) 是否建议合并的结论",
+  "summary": "总体评价（Markdown 格式），包含：1) 变更概要；2) 按严重程度分类的问题概要；3) 是否建议合并的结论",
   "comments": [
     {
       "path": "文件路径，必须与 diff 中的路径完全一致",
@@ -56,16 +59,18 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 }
 
 字段说明：
-- summary：总体评价，用 Markdown 格式撰写，包含优点、问题概要和合并建议。优点和肯定性评价只放在 summary 中。
+- summary：总体评价，用 Markdown 格式撰写，简要说明变更内容、问题概要和合并建议
 - comments：行内评论数组，**只包含问题和改进建议**，每条关联到具体代码行
   - path：文件路径，必须与 diff 中 "=== 文件:" 后显示的路径完全一致
   - line：新版本文件中的行号（整数），必须是 diff 中左侧标注了行号的行
   - body：审查意见，请以 🔴（严重/必须修复）或 🟡（建议/可改进）开头
 
-注意：
-- comments 中**不要包含优点或肯定性评论**（🟢），优点统一写在 summary 中
-- 只对有问题或改进建议的代码行添加 comment
-- 如果代码没有问题，comments 为空数组即可
+【严格要求】：
+- comments 中 **禁止包含任何优点、肯定性评价或表扬**
+- comments 中 **只能是问题指出或改进建议**
+- 如果某行代码没有问题，就不要为它添加 comment
+- 如果整个 PR 没有问题，comments 必须是空数组 []
+- 不要为了"平衡"而添加正面评论，我们只关心需要修复或改进的地方
 - line 必须是 diff 中左侧有行号标注的行
 """)
 
@@ -95,9 +100,39 @@ def get_pr_info(pr_number: int) -> dict:
     return json.loads(raw)
 
 
-def get_pr_diff(pr_number: int) -> str:
-    """获取 PR 的 diff 内容"""
-    return run_gh(["pr", "diff", str(pr_number)])
+def get_pr_diff(pr_number: int, context_lines: int = 3) -> str:
+    """
+    获取 PR 的 diff 内容，支持自定义上下文行数。
+    
+    Args:
+        pr_number: PR 编号
+        context_lines: 上下文行数，默认 3 行
+    """
+    if context_lines == 3:
+        # 默认行为，直接使用 gh pr diff
+        return run_gh(["pr", "diff", str(pr_number)])
+    
+    # 获取 PR 的 base 和 head commit SHA
+    try:
+        raw = run_gh([
+            "pr", "view", str(pr_number),
+            "--json", "baseRefOid,headRefOid"
+        ])
+        info = json.loads(raw)
+        base = info.get("baseRefOid", "")
+        head = info.get("headRefOid", "")
+        
+        if not base or not head:
+            # 回退到默认方式
+            return run_gh(["pr", "diff", str(pr_number)])
+        
+        # 使用 git diff 命令获取带自定义上下文的 diff
+        cmd = ["git", "diff", f"-U{context_lines}", f"{base}..{head}"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
+        # 如果失败，回退到 gh pr diff
+        return run_gh(["pr", "diff", str(pr_number)])
 
 
 def get_pr_files(pr_number: int) -> list:
@@ -175,6 +210,142 @@ def truncate_diff(diff: str, max_chars: int = 60000) -> str:
         + "\n\n... [中间部分因长度限制被省略] ...\n\n"
         + diff[-half:]
     )
+
+
+def should_skip_file(file_path: str) -> bool:
+    """
+    判断是否应该跳过某个文件的代码审查。
+    
+    跳过条件：
+    - Go 测试文件：文件名以 .go 结尾且包含 "test"（不区分大小写）
+    """
+    if not file_path:
+        return False
+    
+    file_name = file_path.lower()
+    # 跳过 Go 测试文件
+    if file_name.endswith('.go') and 'test' in file_name:
+        return True
+    
+    return False
+
+
+def is_only_blank_line_changes(diff_block: list) -> bool:
+    """
+    判断 diff 块是否只包含空行变更。
+    
+    空行变更包括：
+    - 添加空行：+ 后面只有空白字符或什么都没有
+    - 删除空行：- 后面只有空白字符或什么都没有
+    
+    Args:
+        diff_block: diff 块的行列表
+    
+    Returns:
+        True 如果只有空行变更，False 否则
+    """
+    has_changes = False
+    
+    for line in diff_block:
+        # 跳过文件头信息（diff --git, +++, ---, @@, index 等）
+        if (line.startswith('diff --git') or 
+            line.startswith('+++') or 
+            line.startswith('---') or 
+            line.startswith('@@') or
+            line.startswith('index ') or
+            line.startswith('new file') or
+            line.startswith('deleted file') or
+            line.startswith('similarity') or
+            line.startswith('rename') or
+            line.startswith('Binary')):
+            continue
+        
+        # 检查变更行（以 + 或 - 开头，但不是 +++ 或 ---）
+        if line.startswith('+') and not line.startswith('+++'):
+            has_changes = True
+            # 检查 + 后面的内容是否为空
+            content = line[1:]
+            if content.strip():  # 有非空白内容
+                return False
+        elif line.startswith('-') and not line.startswith('---'):
+            has_changes = True
+            # 检查 - 后面的内容是否为空
+            content = line[1:]
+            if content.strip():  # 有非空白内容
+                return False
+    
+    # 如果有变更且所有变更都是空行，返回 True
+    return has_changes
+
+
+def filter_diff(diff: str) -> tuple:
+    """
+    过滤 diff，移除不需要审查的文件。
+    
+    跳过条件：
+    - Go 测试文件
+    - 只包含空行变更的文件
+    
+    返回: (filtered_diff, skipped_files, blank_only_files)
+        filtered_diff: 过滤后的 diff
+        skipped_files: 被跳过的文件列表（测试文件）
+        blank_only_files: 只有空行变更的文件列表
+    """
+    lines = diff.split('\n')
+    filtered_lines = []
+    skipped_files = []
+    blank_only_files = []
+    current_file = None
+    current_block = []
+    skip_current = False
+    skip_reason = None  # 'test' or 'blank'
+    
+    def process_block():
+        """处理当前文件块"""
+        nonlocal skip_current, skip_reason
+        if current_file is None:
+            return
+        
+        if skip_current:
+            if skip_reason == 'test':
+                skipped_files.append(current_file)
+            elif skip_reason == 'blank':
+                blank_only_files.append(current_file)
+        else:
+            # 检查是否只有空行变更
+            if is_only_blank_line_changes(current_block):
+                blank_only_files.append(current_file)
+            else:
+                filtered_lines.extend(current_block)
+    
+    for line in lines:
+        if line.startswith('diff --git'):
+            # 保存之前的文件块
+            process_block()
+            
+            # 开始新的文件块
+            match = re.search(r' b/(.+)$', line)
+            if match:
+                current_file = match.group(1)
+                if should_skip_file(current_file):
+                    skip_current = True
+                    skip_reason = 'test'
+                else:
+                    skip_current = False
+                    skip_reason = None
+            else:
+                current_file = None
+                skip_current = False
+                skip_reason = None
+            
+            current_block = [line]
+        else:
+            current_block.append(line)
+    
+    # 处理最后一个文件块
+    process_block()
+    
+    return '\n'.join(filtered_lines), skipped_files, blank_only_files
 
 
 def annotate_diff_with_line_numbers(diff: str) -> tuple:
@@ -376,6 +547,8 @@ def main():
                         help="将审查结果发布为 PR Review（行内评论 + 总结）")
     parser.add_argument("--max-diff-chars", type=int, default=60000,
                         help="diff 最大字符数 (默认: 60000)")
+    parser.add_argument("-U", "--context-lines", type=int, default=10,
+                        help="diff 上下文行数 (默认: 10)")
 
     args = parser.parse_args()
 
@@ -387,8 +560,8 @@ def main():
     print(f"   变更: +{pr_info.get('additions', 0)} -{pr_info.get('deletions', 0)}")
 
     # 2. 获取 diff
-    print(f"\n📝 获取代码变更...")
-    diff = get_pr_diff(args.pr_number)
+    print(f"\n📝 获取代码变更（上下文 {args.context_lines} 行）...")
+    diff = get_pr_diff(args.pr_number, args.context_lines)
     if not diff:
         print("⚠️  PR 没有代码变更。")
         sys.exit(0)
@@ -398,24 +571,35 @@ def main():
     if len(diff) < original_len:
         print(f"   ⚠️  diff 较长 ({original_len} 字符)，已截断至 {args.max_diff_chars} 字符")
 
-    # 3. 获取文件列表
+    # 3. 过滤不需要审查的文件（如 Go 测试文件、纯空行变更）
+    diff, skipped_files, blank_only_files = filter_diff(diff)
+    if skipped_files:
+        print(f"   ⏭️  跳过 {len(skipped_files)} 个测试文件: {', '.join(skipped_files)}")
+    if blank_only_files:
+        print(f"   ⏭️  跳过 {len(blank_only_files)} 个纯空行变更文件: {', '.join(blank_only_files)}")
+    
+    if not diff.strip():
+        print("⚠️  过滤后没有需要审查的代码变更。")
+        sys.exit(0)
+
+    # 4. 获取文件列表
     files = get_pr_files(args.pr_number)
     pr_info["files"] = files
     print(f"   变更文件数: {len(files)}")
 
-    # 4. 给 diff 添加行号注释
+    # 5. 给 diff 添加行号注释
     annotated_diff, valid_lines = annotate_diff_with_line_numbers(diff)
 
-    # 5. 构建 prompt 并调用 AI
+    # 6. 构建 prompt 并调用 AI
     prompt = build_review_prompt(pr_info, annotated_diff)
     review_raw = ai_review(prompt, args.model)
 
-    # 6. 解析 AI 回复
+    # 7. 解析 AI 回复
     review_data = parse_review_response(review_raw)
     summary = review_data.get("summary", "（未能解析审查结果）")
     comments = review_data.get("comments", [])
 
-    # 7. 输出结果
+    # 8. 输出结果
     print("=" * 60)
     print("📝 AI 代码审查结果")
     print("=" * 60)
@@ -429,7 +613,7 @@ def main():
         print("💬 没有行内评论。")
     print("=" * 60)
 
-    # 8. 可选：发布 Review
+    # 9. 可选：发布 Review
     if args.post_comment:
         post_review_with_comments(args.pr_number, summary, comments, valid_lines)
     else:
