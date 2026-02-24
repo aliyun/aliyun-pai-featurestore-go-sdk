@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
@@ -412,6 +413,58 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 		}
 	}
 
+	return featuresResult, nil
+}
+
+func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequenceUserIds []interface{}, featureEntityName string) (map[string]interface{}, error) {
+	featureEntity, ok := m.featureEntityMap[featureEntityName]
+	if !ok {
+		return nil, fmt.Errorf("feature entity name:%s not found", featureEntityName)
+	}
+
+	var wg sync.WaitGroup
+
+	featureViewMap := m.featureEntityJoinIdMap[featureEntity.FeatureEntityJoinid]
+
+	results := make([]map[string]interface{}, len(featureViewMap))
+
+	idx := 0
+	for _, featureView := range featureViewMap {
+		wg.Add(1)
+		go func(index int, featureView FeatureView) {
+			defer wg.Done()
+			var features map[string]interface{}
+			var currentFeatures []map[string]interface{}
+			var err error
+			if featureView.GetType() == constants.Feature_View_Type_Sequence {
+				features, err = featureView.GetOnlineAggregatedFeatures(sequenceUserIds, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+			} else {
+				currentFeatures, err = featureView.GetOnlineFeatures([]interface{}{userId}, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+				if len(currentFeatures) > 0 {
+					features = currentFeatures[0]
+				}
+
+			}
+			if err != nil {
+				fmt.Println(err)
+			}
+			results[index] = features
+
+		}(idx, featureView)
+
+		idx++
+	}
+	wg.Wait()
+
+	featuresResult := make(map[string]interface{}, len(m.Features))
+	for _, res := range results {
+		if res == nil {
+			continue
+		}
+		for k, v := range res {
+			featuresResult[k] = v
+		}
+	}
 	return featuresResult, nil
 }
 

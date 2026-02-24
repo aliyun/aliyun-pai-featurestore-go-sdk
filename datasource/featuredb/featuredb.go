@@ -23,9 +23,16 @@ var (
 	featureDBClient *FeatureDBClient
 )
 
-func InitFeatureDBClient(address, token, vpcAddress string) {
+func InitFeatureDBClient(address, token, vpcAddress string, isTestMode bool) {
 	if featureDBClient != nil {
 		return
+	}
+
+	dialTimeout := 200 * time.Millisecond
+	responseTimeout := 500 * time.Millisecond
+	if isTestMode {
+		dialTimeout = 1000 * time.Millisecond
+		responseTimeout = 1000 * time.Millisecond
 	}
 
 	client := &http.Client{
@@ -34,10 +41,10 @@ func InitFeatureDBClient(address, token, vpcAddress string) {
 			MaxIdleConns:        1000,
 			MaxIdleConnsPerHost: 1000,
 			DialContext: (&net.Dialer{
-				Timeout:   200 * time.Millisecond,
+				Timeout:   dialTimeout,
 				KeepAlive: 30 * time.Second,
 			}).DialContext,
-			ResponseHeaderTimeout: 500 * time.Millisecond,
+			ResponseHeaderTimeout: responseTimeout,
 			IdleConnTimeout:       90 * time.Second,
 		},
 	}

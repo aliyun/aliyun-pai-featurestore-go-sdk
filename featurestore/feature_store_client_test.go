@@ -3,6 +3,7 @@ package featurestore
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"fortio.org/assert"
@@ -12,28 +13,34 @@ import (
 	"github.com/expr-lang/expr/ast"
 )
 
-func createFeatureSotreClient() (*FeatureStoreClient, error) {
+func createFeatureStoreClient(region, projectName string) (*FeatureStoreClient, error) {
 	accessId := os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
 	accessKey := os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
 
 	fdbUser := os.Getenv("FEATUREDB_USERNAME")
 	fdbPassword := os.Getenv("FEATUREDB_PASSWORD")
 
-	return NewFeatureStoreClient("cn-shenzhen", accessId, accessKey, "fdb_test", WithDomain("paifeaturestore.cn-shenzhen.aliyuncs.com"),
+	return NewFeatureStoreClient(region, accessId, accessKey, projectName, WithDomain(fmt.Sprintf("paifeaturestore.%s.aliyuncs.com", region)),
 		WithTestMode(), WithFeatureDBLogin(fdbUser, fdbPassword))
 
 }
 
+const (
+	region         = "cn-beijing"
+	projectName    = "fs_demo2"
+	fdbProjectName = "fdb_test"
+)
+
 func TestGetFeatureViewOnlineFeatures(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, projectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_demo2")
+	project, err := client.GetProject(projectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,16 +63,38 @@ func TestGetFeatureViewOnlineFeatures(t *testing.T) {
 	}
 }
 
+func TestGetSequenceFeatureViewOfSideInfoFeatures(t *testing.T) {
+	fsProjectName := "fdb_test_case"
+	client, err := createFeatureStoreClient(region, fsProjectName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	project, err := client.GetProject(fsProjectName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq_feature_view := project.GetFeatureView("seq_fea_side_info_test2")
+	features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"135313542", "151362919", "160551912"}, []string{"*"}, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	for _, feature := range features {
+		fmt.Println(feature)
+	}
+}
+
 func TestGetModelFeatureOnlineFeatures(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, projectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_demo2")
+	project, err := client.GetProject(projectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,15 +118,15 @@ func TestGetModelFeatureOnlineFeatures(t *testing.T) {
 }
 
 func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
-
+	fdbProjectName := "fs_demo_featuredb"
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_demo_featuredb")
+	project, err := client.GetProject(fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,23 +138,55 @@ func TestGetSeqFeatureViewOnlineFeatures(t *testing.T) {
 	}
 
 	// get online features
-	features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"199636459", "192535056"}, []string{"*"}, nil)
+	features, err := seq_feature_view.GetOnlineFeatures([]interface{}{"133741583", "187524585"}, []string{"*"}, nil)
+
+	if err != nil {
+		t.Error(err)
+	}
+	size1 := 0
+	for _, feature := range features {
+		if feature != nil {
+			for k, value := range feature {
+				if value != "" && k != "user_id" {
+					strs := strings.Split(value.(string), ";")
+					fmt.Println(k, strs)
+					size1 += len(strs)
+					break
+				}
+			}
+		}
+	}
+
+	fmt.Println(features)
+	result, err := seq_feature_view.GetOnlineAggregatedFeatures([]interface{}{"133741583", "187524585"}, []string{"*"}, nil)
 
 	if err != nil {
 		t.Error(err)
 	}
 
-	fmt.Println(features)
+	fmt.Println(result)
+	size2 := 0
+	for k, value := range result {
+		if k != "user_id" {
+			strs := strings.Split(value.(string), ";")
+			fmt.Println(k, strs)
+			size2 += len(strs)
+			break
+
+		}
+	}
+	assert.Equal(t, size1, size2)
 }
 func TestWriteBloomKV(t *testing.T) {
 	// init client
-	client, err := createFeatureSotreClient()
+	fsProjectName := "fdb_test"
+	client, err := createFeatureStoreClient(region, fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fdb_test")
+	project, err := client.GetProject(fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,13 +209,13 @@ func TestWriteBloomKV(t *testing.T) {
 
 func TestBloomItems(t *testing.T) {
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fdb_test")
+	project, err := client.GetProject(fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,13 +244,13 @@ func TestBloomItems(t *testing.T) {
 }
 func TestDeleteBloomByKey(t *testing.T) {
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fdb_test")
+	project, err := client.GetProject(fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,17 +318,58 @@ func TestExpr(t *testing.T) {
 		}
 	}
 }
+func TestExtractVariables(t *testing.T) {
+	//code := `(age < 30 && (3 <= level < 5) && sex=='male') `
+	testcases := []struct {
+		code   string
+		expect []string
+	}{
+		{
+			code:   "metric_value > 6",
+			expect: []string{"metric_value"},
+		},
+		{
+			code:   "6 < metric_value ",
+			expect: []string{"metric_value"},
+		},
+		{
+			code:   "sex == 'male'",
+			expect: []string{"sex"},
+		},
+		{
+			code:   "metric_value > 6 && sex == 'male'",
+			expect: []string{"metric_value", "sex"},
+		},
+		{
+			code:   "metric_value > 6 && sex == 'male' || os != 'ALL'",
+			expect: []string{"metric_value", "os", "sex"},
+		},
+		{
+			code:   "(metric_value > 6 && sex == 'male') || (os != 'ALL')",
+			expect: []string{"metric_value", "os", "sex"},
+		},
+		{
+			code:   "(age < 30 && (3 <= level < 5) && sex=='male')",
+			expect: []string{"age", "level", "sex"},
+		},
+	}
+	for _, tcase := range testcases {
+		params, err := dao.ExtractVariables(tcase.code)
+		assert.NoError(t, err)
+		assert.Equal(t, params, tcase.expect)
+	}
+}
 
 func TestGetFeatureViewRowCount(t *testing.T) {
-
+	fsProjectName := "ceci_test2"
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("ceci_test2")
+	project, err := client.GetProject(fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,16 +385,16 @@ func TestGetFeatureViewRowCount(t *testing.T) {
 }
 
 func TestFeatureViewRowIdCount(t *testing.T) {
-
+	fsProjectName := "fs_demo_featuredb"
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, fsProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("featuredb test", func(t *testing.T) {
 		// get project by name
-		project, err := client.GetProject("fdb_test")
+		project, err := client.GetProject(fsProjectName)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -301,10 +403,10 @@ func TestFeatureViewRowIdCount(t *testing.T) {
 		if user_feature_view == nil {
 			t.Fatal("feature view not exist")
 		}
-		ids, count1, err := user_feature_view.RowCountIds("boolean_field==false")
+		ids, count1, err := user_feature_view.RowCountIds("int32_field >= 0")
 		assert.Equal(t, nil, err)
 		assert.Equal(t, count1, len(ids))
-		_, count2, _ := user_feature_view.RowCountIds("boolean_field") // true
+		_, count2, _ := user_feature_view.RowCountIds("int32_field < 0") // true
 
 		_, total, _ := user_feature_view.RowCountIds("") // true
 		assert.Equal(t, count1+count2, total)
@@ -315,14 +417,14 @@ func TestFeatureViewRowIdCount(t *testing.T) {
 func TestScanAndIterateData(t *testing.T) {
 
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, fdbProjectName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	t.Run("no channel", func(t *testing.T) {
 		// get project by name
-		project, err := client.GetProject("fdb_test")
+		project, err := client.GetProject(fdbProjectName)
 		if err != nil {
 			t.Fatal(err)
 		}
