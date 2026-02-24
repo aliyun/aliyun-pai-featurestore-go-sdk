@@ -156,6 +156,7 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
 			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], seq.onlineBehaviourTableFieldsMap[behaviorField])
 		}
+
 	}
 
 	properties := make(map[string]interface{})
