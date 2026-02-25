@@ -54,7 +54,7 @@ func NewFeatureViewIGraphDao(config DaoConfig) *FeatureViewIGraphDao {
 	}
 	return &dao
 }
-func (d *FeatureViewIGraphDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
+func (d *FeatureViewIGraphDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 	var pkeys []string
 	for _, key := range keys {
 		if pkey := utils.ToString(key, ""); pkey != "" {

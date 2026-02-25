@@ -249,6 +249,10 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 	return sequenceFeatureResults, err
 }
 
+func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeatures(joinIds, features, alias)
+}
+
 func (f *SequenceFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
 	if f.sequenceConfig.RegistrationMode == constants.Seq_Registration_Mode_Only_Behavior {
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
