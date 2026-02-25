@@ -679,10 +679,6 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			for i := 0; i < kkvRecordBlock.ValuesLength(); i++ {
 				kkv := new(fdbserverfb.KKVData)
 				kkvRecordBlock.Values(kkv, i)
-				dataBytes := kkv.ValueBytes()
-				if len(dataBytes) < 2 {
-					continue
-				}
 				pk := string(kkv.Pk())
 				userIdEvent := strings.Split(pk, "\u001D")
 				if len(userIdEvent) != 2 {
@@ -717,6 +713,13 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 					if seq.playTime <= t {
 						continue
 					}
+				}
+				dataBytes := kkv.ValueBytes()
+				if len(dataBytes) < 2 {
+					if !withValue {
+						sequences = append(sequences, seq)
+					}
+					continue
 				}
 				dataCursor := utils.NewByteCursor(dataBytes)
 				// 读取版本号
@@ -954,10 +957,6 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 			for i := 0; i < kkvRecordBlock.ValuesLength(); i++ {
 				kkv := new(fdbserverfb.KKVData)
 				kkvRecordBlock.Values(kkv, i)
-				dataBytes := kkv.ValueBytes()
-				if len(dataBytes) < 2 {
-					continue
-				}
 				pk := string(kkv.Pk())
 				userIdEvent := strings.Split(pk, "\u001D")
 				if len(userIdEvent) != 2 {
@@ -992,6 +991,13 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 					if seq.playTime <= t {
 						continue
 					}
+				}
+				dataBytes := kkv.ValueBytes()
+				if len(dataBytes) < 2 {
+					if !withValue {
+						sequences = append(sequences, seq)
+					}
+					continue
 				}
 				dataCursor := utils.NewByteCursor(dataBytes)
 				// 读取版本号
