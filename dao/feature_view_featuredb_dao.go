@@ -716,7 +716,9 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				}
 				dataBytes := kkv.ValueBytes()
 				if len(dataBytes) < 2 {
-					sequences = append(sequences, seq)
+					if !withValue {
+						sequences = append(sequences, seq)
+					}
 					continue
 				}
 				dataCursor := utils.NewByteCursor(dataBytes)
@@ -992,7 +994,9 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 				}
 				dataBytes := kkv.ValueBytes()
 				if len(dataBytes) < 2 {
-					sequences = append(sequences, seq)
+					if !withValue {
+						sequences = append(sequences, seq)
+					}
 					continue
 				}
 				dataCursor := utils.NewByteCursor(dataBytes)
