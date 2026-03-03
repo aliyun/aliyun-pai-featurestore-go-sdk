@@ -213,14 +213,14 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 }
 
 func (f *SequenceFeatureView) GetOnlineFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesWithCountAndContext(ctx, joinIds, features, alias, 1)
+	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, 1)
 }
 
 func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesWithCountAndContext(context.Background(), joinIds, features, alias, count)
+	return f.getOnlineFeaturesWithCountWithContext(context.Background(), joinIds, features, alias, count)
 }
 
-func (f *SequenceFeatureView) getOnlineFeaturesWithCountAndContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+func (f *SequenceFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

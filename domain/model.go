@@ -114,6 +114,8 @@ func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[st
 	}
 
 	var mu sync.Mutex
+	var firstErr error
+	var errOnce sync.Once
 
 	var wg sync.WaitGroup
 	joinIdFeaturesMap := make(map[string][]map[string]interface{})
@@ -127,9 +129,10 @@ func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[st
 			wg.Add(1)
 			go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 				defer wg.Done()
-				features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+				features, err := featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 				if err != nil {
-					fmt.Println(err)
+					errOnce.Do(func() { firstErr = err })
+					return
 				}
 
 				mu.Lock()
@@ -140,6 +143,10 @@ func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[st
 		}
 	}
 	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	// read keys of child entities with deduplication
 	childJoinIdKeys := make(map[string][]interface{})
@@ -169,6 +176,8 @@ func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[st
 	// read features of child entities
 	if len(childJoinIdKeys) > 0 {
 		var childWg sync.WaitGroup
+		var childFirstErr error
+		var childErrOnce sync.Once
 		for childJoinId, keys := range childJoinIdKeys {
 			featureViewCount := m.joinIdFeatureViewCountMap[childJoinId]
 			if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
@@ -176,9 +185,10 @@ func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[st
 					childWg.Add(1)
 					go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 						defer childWg.Done()
-						features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+						features, err := featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 						if err != nil {
-							fmt.Println(err)
+							childErrOnce.Do(func() { childFirstErr = err })
+							return
 						}
 
 						mu.Lock()
@@ -189,6 +199,10 @@ func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[st
 			}
 		}
 		childWg.Wait()
+
+		if childFirstErr != nil {
+			return nil, childFirstErr
+		}
 	}
 
 	featuresResult := make([]map[string]interface{}, size)
@@ -297,14 +311,17 @@ func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, join
 	featureViewCount := len(featureViewMap)
 
 	var mu sync.Mutex
+	var firstErr error
+	var errOnce sync.Once
 
 	for _, featureView := range featureViewMap {
 		wg.Add(1)
 		go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 			defer wg.Done()
-			features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+			features, err := featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 			if err != nil {
-				fmt.Println(err)
+				errOnce.Do(func() { firstErr = err })
+				return
 			}
 			mu.Lock()
 			joinIdFeaturesMap[joinId] = append(joinIdFeaturesMap[joinId], features...)
@@ -313,6 +330,10 @@ func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, join
 		}(featureView, featureEntity.FeatureEntityJoinid, joinIds[featureEntity.FeatureEntityJoinid], featureViewCount)
 	}
 	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	featuresResult := make([]map[string]interface{}, size)
 	for i := 0; i < size; i++ {
@@ -365,15 +386,18 @@ func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, join
 				}
 			}
 			var childWg sync.WaitGroup
+			var childFirstErr error
+			var childErrOnce sync.Once
 			for childJoinId, keys := range childJoinIdKeys {
 				if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
 					for _, featureView := range featureViewMap {
 						childWg.Add(1)
 						go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 							defer childWg.Done()
-							features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+							features, err := featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 							if err != nil {
-								fmt.Println(err)
+								childErrOnce.Do(func() { childFirstErr = err })
+								return
 							}
 
 							mu.Lock()
@@ -384,6 +408,10 @@ func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, join
 				}
 			}
 			childWg.Wait()
+
+			if childFirstErr != nil {
+				return nil, childFirstErr
+			}
 		}
 
 		// merge features of child entities
@@ -433,10 +461,10 @@ func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, join
 }
 
 func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequenceUserIds []interface{}, featureEntityName string) (map[string]interface{}, error) {
-	return m.GetOnlineFeaturesWithAggregatedSequenceAndContext(context.Background(), userId, sequenceUserIds, featureEntityName)
+	return m.GetOnlineFeaturesWithAggregatedSequenceWithContext(context.Background(), userId, sequenceUserIds, featureEntityName)
 }
 
-func (m *Model) GetOnlineFeaturesWithAggregatedSequenceAndContext(ctx context.Context, userId interface{}, sequenceUserIds []interface{}, featureEntityName string) (map[string]interface{}, error) {
+func (m *Model) GetOnlineFeaturesWithAggregatedSequenceWithContext(ctx context.Context, userId interface{}, sequenceUserIds []interface{}, featureEntityName string) (map[string]interface{}, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -449,6 +477,8 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequenceAndContext(ctx context.Co
 	joinId := featureEntity.FeatureEntityJoinid
 
 	var wg sync.WaitGroup
+	var firstErr error
+	var errOnce sync.Once
 
 	featureViewMap := m.featureEntityJoinIdMap[featureEntity.FeatureEntityJoinid]
 
@@ -472,7 +502,8 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequenceAndContext(ctx context.Co
 
 			}
 			if err != nil {
-				fmt.Println(err)
+				errOnce.Do(func() { firstErr = err })
+				return
 			}
 			results[index] = features
 
@@ -481,6 +512,10 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequenceAndContext(ctx context.Co
 		idx++
 	}
 	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	featuresResult := make(map[string]interface{}, len(m.Features))
 	for _, res := range results {
@@ -530,15 +565,18 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequenceAndContext(ctx context.Co
 			joinIdFeaturesMap := make(map[string][]map[string]interface{})
 
 			var childWg sync.WaitGroup
+			var childFirstErr error
+			var childErrOnce sync.Once
 			for childJoinId, keys := range childJoinIdKeys {
 				if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
 					for _, featureView := range featureViewMap {
 						childWg.Add(1)
 						go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 							defer childWg.Done()
-							features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+							features, err := featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 							if err != nil {
-								fmt.Println(err)
+								childErrOnce.Do(func() { childFirstErr = err })
+								return
 							}
 
 							mu.Lock()
@@ -549,6 +587,10 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequenceAndContext(ctx context.Co
 				}
 			}
 			childWg.Wait()
+
+			if childFirstErr != nil {
+				return nil, childFirstErr
+			}
 
 			// merge features of child entities
 			childFeatureIndex := make(map[string]map[string]map[string]interface{}) // join id : key : row values
