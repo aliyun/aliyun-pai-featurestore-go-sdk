@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -54,7 +55,7 @@ func NewFeatureViewIGraphDao(config DaoConfig) *FeatureViewIGraphDao {
 	}
 	return &dao
 }
-func (d *FeatureViewIGraphDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
+func (d *FeatureViewIGraphDao) GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 	var pkeys []string
 	for _, key := range keys {
 		if pkey := utils.ToString(key, ""); pkey != "" {
@@ -108,7 +109,7 @@ func (d *FeatureViewIGraphDao) GetFeatures(keys []interface{}, selectFields []st
 	return result, nil
 }
 
-func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewIGraphDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
 	var selectFields []string
 	if sequenceConfig.PlayTimeField == "" {
 		selectFields = []string{sequenceConfig.ItemIdField, sequenceConfig.EventField, sequenceConfig.TimestampField}
@@ -226,7 +227,7 @@ func (d *FeatureViewIGraphDao) GetUserSequenceFeature(keys []interface{}, userId
 	return results, nil
 }
 
-func (d *FeatureViewIGraphDao) GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewIGraphDao) GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
 	if len(events) == 0 {
 		return []map[string]interface{}{}, errors.New("igraph not support GetBehaviorFeatures with empty events")
 	}

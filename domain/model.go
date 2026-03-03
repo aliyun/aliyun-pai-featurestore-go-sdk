@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -89,6 +90,13 @@ func NewModel(model *api.Model, p *Project, lt *LabelTable) *Model {
 }
 
 func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithContext(context.Background(), joinIds)
+}
+
+func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[string][]interface{}) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	size := -1
 	for _, joinid := range m.featureEntityJoinIdList {
@@ -119,7 +127,7 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 			wg.Add(1)
 			go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 				defer wg.Done()
-				features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+				features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 				if err != nil {
 					fmt.Println(err)
 				}
@@ -168,7 +176,7 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 					childWg.Add(1)
 					go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 						defer childWg.Done()
-						features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+						features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 						if err != nil {
 							fmt.Println(err)
 						}
@@ -263,6 +271,14 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 }
 
 func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, featureEntityName string) ([]map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithEntityWithContext(context.Background(), joinIds, featureEntityName)
+}
+
+func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, joinIds map[string][]interface{}, featureEntityName string) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	featureEntity, ok := m.featureEntityMap[featureEntityName]
 	if !ok {
 		return nil, fmt.Errorf("feature entity name:%s not found", featureEntityName)
@@ -286,7 +302,7 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 		wg.Add(1)
 		go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 			defer wg.Done()
-			features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+			features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -355,7 +371,7 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 						childWg.Add(1)
 						go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 							defer childWg.Done()
-							features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+							features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 							if err != nil {
 								fmt.Println(err)
 							}
@@ -417,6 +433,14 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 }
 
 func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequenceUserIds []interface{}, featureEntityName string) (map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithAggregatedSequenceAndContext(context.Background(), userId, sequenceUserIds, featureEntityName)
+}
+
+func (m *Model) GetOnlineFeaturesWithAggregatedSequenceAndContext(ctx context.Context, userId interface{}, sequenceUserIds []interface{}, featureEntityName string) (map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	featureEntity, ok := m.featureEntityMap[featureEntityName]
 	if !ok {
 		return nil, fmt.Errorf("feature entity name:%s not found", featureEntityName)
@@ -439,9 +463,9 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequ
 			var currentFeatures []map[string]interface{}
 			var err error
 			if featureView.GetType() == constants.Feature_View_Type_Sequence {
-				features, err = featureView.GetOnlineAggregatedFeatures(sequenceUserIds, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+				features, err = featureView.GetOnlineAggregatedFeaturesWithContext(ctx, sequenceUserIds, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
 			} else {
-				currentFeatures, err = featureView.GetOnlineFeatures([]interface{}{userId}, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+				currentFeatures, err = featureView.GetOnlineFeaturesWithContext(ctx, []interface{}{userId}, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
 				if len(currentFeatures) > 0 {
 					features = currentFeatures[0]
 				}
@@ -512,7 +536,7 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequ
 						childWg.Add(1)
 						go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 							defer childWg.Done()
-							features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+							features, err := featureView.getOnlineFeaturesWithCountAndContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 							if err != nil {
 								fmt.Println(err)
 							}

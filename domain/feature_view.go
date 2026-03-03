@@ -1,15 +1,21 @@
 package domain
 
 import (
+	"context"
+
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 )
 
 type FeatureView interface {
 	GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error)
+	GetOnlineFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error)
 	getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error)
+	getOnlineFeaturesWithCountAndContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error)
 	GetOnlineAggregatedFeatures(joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error)
+	GetOnlineAggregatedFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error)
 	GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error)
+	GetBehaviorFeaturesWithContext(ctx context.Context, userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error)
 	GetName() string
 	GetFeatureEntityName() string
 	GetType() string
