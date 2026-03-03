@@ -92,7 +92,7 @@ func (d *FeatureViewHologresDao) GetFeaturesWithContext(ctx context.Context, key
 		}
 	}
 
-	rows, err := stmt.Query(args...)
+	rows, err := stmt.QueryContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeatureWithContext(ctx context.C
 				d.mu.Unlock()
 			}
 		}
-		rows, err := stmt.Query(args...)
+		rows, err := stmt.QueryContext(ctx, args...)
 		if err != nil {
 			log.Println(err)
 			return nil
@@ -238,7 +238,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeatureWithContext(ctx context.C
 			}
 		}
 
-		rows, err := stmt.Query(args...)
+		rows, err := stmt.QueryContext(ctx, args...)
 		if err != nil {
 			log.Println(err)
 			return nil
@@ -376,7 +376,7 @@ func (d *FeatureViewHologresDao) GetUserBehaviorFeatureWithContext(ctx context.C
 				d.mu.Unlock()
 			}
 		}
-		rows, err := stmt.Query(args...)
+		rows, err := stmt.QueryContext(ctx, args...)
 		if err != nil {
 			log.Println(err)
 			return nil
@@ -435,7 +435,7 @@ func (d *FeatureViewHologresDao) GetUserBehaviorFeatureWithContext(ctx context.C
 				d.mu.Unlock()
 			}
 		}
-		rows, err := stmt.Query(args...)
+		rows, err := stmt.QueryContext(ctx, args...)
 		if err != nil {
 			log.Println(err)
 			return nil

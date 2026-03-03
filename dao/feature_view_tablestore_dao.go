@@ -52,6 +52,10 @@ func NewFeatureViewTableStoreDao(config DaoConfig) *FeatureViewTableStoreDao {
 }
 
 func (d *FeatureViewTableStoreDao) GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	result := make([]map[string]interface{}, 0, len(keys))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -136,6 +140,10 @@ func (d *FeatureViewTableStoreDao) GetFeaturesWithContext(ctx context.Context, k
 }
 
 func (d *FeatureViewTableStoreDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 
@@ -407,6 +415,10 @@ func (d *FeatureViewTableStoreDao) GetUserSequenceFeatureWithContext(ctx context
 }
 
 func (d *FeatureViewTableStoreDao) GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 
