@@ -15,7 +15,7 @@ import (
 )
 
 type FeatureViewDao interface {
-	GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error)
+	GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error)
 	GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
 	GetUserAggregatedSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error)
 	GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
@@ -31,7 +31,7 @@ type FeatureViewDao interface {
 type UnimplementedFeatureViewDao struct {
 }
 
-func (d *UnimplementedFeatureViewDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
+func (d *UnimplementedFeatureViewDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (d *UnimplementedFeatureViewDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
@@ -168,6 +168,7 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
 			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], seq.onlineBehaviourTableFieldsMap[behaviorField])
 		}
+
 	}
 
 	properties := make(map[string]interface{})

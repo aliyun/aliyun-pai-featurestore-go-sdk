@@ -68,6 +68,16 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 			}
 		}
 		for _, seqConfig := range nameSeqConfigsMap {
+			uniqueBehaviorFields := make(map[string]bool)
+			var deduplicatedFields []string
+
+			for _, field := range seqConfig.OnlineBehaviorTableFields {
+				if !uniqueBehaviorFields[field] {
+					uniqueBehaviorFields[field] = true
+					deduplicatedFields = append(deduplicatedFields, field)
+				}
+			}
+			seqConfig.OnlineBehaviorTableFields = deduplicatedFields
 			uniqueSeqConfigs = append(uniqueSeqConfigs, seqConfig)
 		}
 		sequenceFeatureView.sequenceConfig.SeqConfig = uniqueSeqConfigs
@@ -237,6 +247,10 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 	}
 
 	return sequenceFeatureResults, err
+}
+
+func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeatures(joinIds, features, alias)
 }
 
 func (f *SequenceFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {

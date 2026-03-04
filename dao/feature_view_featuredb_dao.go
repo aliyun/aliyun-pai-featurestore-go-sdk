@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -112,7 +113,7 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 	return &dao
 }
 
-func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields []string) ([]map[string]interface{}, error) {
+func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0, len(keys))
 	selectFieldsSet := make(map[string]struct{})
 	for _, selectField := range selectFields {
@@ -158,6 +159,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
+			req.Header.Set("X-FeatureView-Weight", strconv.Itoa(weight))
 
 			response, err := d.featureDBClient.Client.Do(req)
 			if err != nil {
@@ -171,6 +173,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("Authorization", d.featureDBClient.Token)
 				req.Header.Set("Auth", d.signature)
+				req.Header.Set("X-FeatureView-Weight", strconv.Itoa(weight))
 				response, err = d.featureDBClient.Client.Do(req)
 				if err != nil {
 					errChan <- err
@@ -733,7 +736,9 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				}
 				dataBytes := kkv.ValueBytes()
 				if len(dataBytes) < 2 {
-					sequences = append(sequences, seq)
+					if !withValue {
+						sequences = append(sequences, seq)
+					}
 					continue
 				}
 				dataCursor := utils.NewByteCursor(dataBytes)
@@ -1009,7 +1014,9 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 				}
 				dataBytes := kkv.ValueBytes()
 				if len(dataBytes) < 2 {
-					sequences = append(sequences, seq)
+					if !withValue {
+						sequences = append(sequences, seq)
+					}
 					continue
 				}
 				dataCursor := utils.NewByteCursor(dataBytes)
