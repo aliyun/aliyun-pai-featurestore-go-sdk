@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
@@ -249,4 +250,171 @@ func (f *BaseFeatureView) RowCountIds(expr string) ([]string, int, error) {
 // ScanAndIterateData implements FeatureView.
 func (f *BaseFeatureView) ScanAndIterateData(filter string, ch chan<- string) ([]string, error) {
 	return f.featureViewDao.ScanAndIterateData(filter, ch)
+}
+
+func (f *BaseFeatureView) WriteFeatureDB(data []map[string]interface{}) {
+	f.featureViewDao.WriteFeatures(data)
+}
+
+func (f *BaseFeatureView) WriteFeaturesWithMode(data []map[string]interface{}, insertMode constants.InsertMode) {
+	if len(data) == 0 {
+		return
+	}
+
+	filteredData := make([]map[string]interface{}, 0, len(data))
+
+	for _, item := range data {
+		filteredItem := f.filterData(item)
+
+		// 只处理非空的数据
+		if len(filteredItem) > 0 {
+			// 添加插入模式标记
+			filteredItem["__insert_mode__"] = insertMode
+			filteredData = append(filteredData, filteredItem)
+		}
+	}
+
+	f.featureViewDao.WriteFeatures(filteredData)
+}
+
+func (f *BaseFeatureView) filterData(data map[string]interface{}) map[string]interface{} {
+	if len(data) == 0 {
+		return make(map[string]interface{})
+	}
+
+	filteredMap := make(map[string]interface{})
+
+	for key, value := range data {
+		if value == nil {
+			continue // 跳过 nil 值
+		}
+
+		// 使用反射判断类型
+		v := reflect.ValueOf(value)
+
+		switch v.Kind() {
+		case reflect.Slice, reflect.Array:
+			// 处理 List/Array 类型
+			filteredList := f.filterList(value)
+			if len(filteredList) > 0 {
+				filteredMap[key] = filteredList
+			}
+
+		case reflect.Map:
+			// 处理 Map 类型
+			filteredNestedMap := f.filterMap(value)
+			if len(filteredNestedMap) > 0 {
+				filteredMap[key] = filteredNestedMap
+			}
+
+		default:
+			// 其他类型直接保留
+			filteredMap[key] = value
+		}
+	}
+
+	return filteredMap
+}
+
+func (f *BaseFeatureView) filterList(list interface{}) []interface{} {
+	v := reflect.ValueOf(list)
+	if v.Kind() != reflect.Slice && v.Kind() != reflect.Array {
+		return []interface{}{}
+	}
+
+	result := make([]interface{}, 0, v.Len())
+
+	for i := 0; i < v.Len(); i++ {
+		item := v.Index(i).Interface()
+
+		if item == nil {
+			continue
+		}
+
+		itemValue := reflect.ValueOf(item)
+
+		switch itemValue.Kind() {
+		case reflect.Slice, reflect.Array:
+			// 嵌套列表
+			filtered := f.filterList(item)
+			if len(filtered) > 0 {
+				result = append(result, filtered)
+			}
+
+		case reflect.Map:
+			// 嵌套 Map
+			filtered := f.filterMap(item)
+			if len(filtered) > 0 {
+				result = append(result, filtered)
+			}
+
+		default:
+			// 基本类型
+			result = append(result, item)
+		}
+	}
+
+	return result
+}
+
+func (f *BaseFeatureView) filterMap(m interface{}) map[string]interface{} {
+	v := reflect.ValueOf(m)
+	if v.Kind() != reflect.Map {
+		return make(map[string]interface{})
+	}
+
+	result := make(map[string]interface{})
+
+	for _, key := range v.MapKeys() {
+		keyStr := fmt.Sprintf("%v", key.Interface())
+		value := v.MapIndex(key).Interface()
+
+		if value == nil {
+			continue
+		}
+
+		valueType := reflect.ValueOf(value)
+
+		switch valueType.Kind() {
+		case reflect.Slice, reflect.Array:
+			// 嵌套列表
+			filtered := f.filterList(value)
+			if len(filtered) > 0 {
+				result[keyStr] = filtered
+			}
+
+		case reflect.Map:
+			// 嵌套 Map
+			filtered := f.filterMap(value)
+			if len(filtered) > 0 {
+				result[keyStr] = filtered
+			}
+
+		default:
+			// 基本类型
+			result[keyStr] = value
+		}
+	}
+
+	return result
+}
+
+func (f *BaseFeatureView) WriteFeatures(data []map[string]interface{}) error {
+	f.featureViewDao.WriteFeatures(data)
+	return nil
+}
+
+func (f *BaseFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, inserMode constants.InsertMode) {
+	for _, item := range data {
+		item["__insert_mode__"] = inserMode
+	}
+	f.featureViewDao.WriteFeatures(data)
+}
+
+func (f *BaseFeatureView) WriteFlush() {
+	f.featureViewDao.WriteFlush()
+}
+
+func (f *BaseFeatureView) Close() error {
+	return f.featureViewDao.Close()
 }

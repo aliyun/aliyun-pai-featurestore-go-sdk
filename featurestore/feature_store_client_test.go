@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"fortio.org/assert"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
@@ -434,4 +435,80 @@ func TestScanAndIterateData(t *testing.T) {
 		}
 	})
 
+}
+
+func TestWriteFeaturesAsync(t *testing.T) {
+	// init client
+	client, err := createFeatureSotreClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get project by name
+	project, err := client.GetProject("fs_python_test1013")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get featureview by name
+	featureView := project.GetFeatureView("seq_test60")
+	if featureView == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	// 准备测试数据
+	totalRecords := 150 // 超过 batchSize(20)，测试分批写入
+	writeData := make([]map[string]interface{}, 0, totalRecords)
+
+	for i := 0; i < totalRecords; i++ {
+		record := map[string]interface{}{
+			"request_id": int64(1000000000 + i),
+			"user_id":    int64(100000 + i%10), // 10 个不同的用户
+			"exp_id":     fmt.Sprintf("exp_%d", i%5),
+			"page":       "home_page",
+			"net_type":   "wifi",
+			"event_time": time.Now().UnixMilli(),
+			"item_id":    int64(800000 + i),
+			"event":      "click",
+			"playtime":   float64(i%100) * 1.5,
+			"ds":         "20241203",
+		}
+		writeData = append(writeData, record)
+	}
+
+	// 测试异步批量写入
+	startTime := time.Now()
+
+	// 调用 WriteFeatures（非阻塞）
+	featureView.WriteFeatures(writeData)
+
+	featureView.WriteFlush()
+
+	// 等待数据写入完成（实际场景中应该由业务逻辑控制何时 flush）
+	time.Sleep(200 * time.Millisecond) // 等待后台协程处理
+
+	elapsed := time.Since(startTime)
+	t.Logf("Successfully wrote %d records in %v", totalRecords, elapsed)
+
+	// 验证写入：读取刚才写入的部分数据
+	keys := make([]interface{}, 0, 10)
+	for i := 0; i < 10; i++ {
+		keys = append(keys, fmt.Sprintf("%d", 100000+i))
+	}
+
+	features, err := featureView.GetOnlineFeatures(keys, []string{"*"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("Retrieved %d records", len(features))
+
+	// 验证至少能读到部分数据
+	if len(features) == 0 {
+		t.Error("Expected to read some features, but got none")
+	}
+
+	for _, feature := range features[:min(3, len(features))] {
+		t.Logf("Feature: %+v", feature)
+	}
 }

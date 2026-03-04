@@ -52,3 +52,11 @@ const (
 	Seq_Registration_Mode_Full_Sequence = "full_sequence"
 	Seq_Registration_Mode_Only_Behavior = "only_behavior"
 )
+
+type InsertMode int
+
+const (
+	Unknown InsertMode = iota
+	FullRowWrite
+	PartialFieldWrite
+)
