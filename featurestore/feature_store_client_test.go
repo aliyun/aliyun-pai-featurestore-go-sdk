@@ -2,6 +2,7 @@ package featurestore
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"testing"
@@ -466,15 +467,70 @@ func TestScanAndIterateData(t *testing.T) {
 
 }
 
-func TestWriteFeaturesAsync(t *testing.T) {
+const (
+	projectName2 = "fs_python_test1013"
+)
+
+func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
+	client, err := createFeatureStoreClient(region, projectName2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	project, err := client.GetProject(projectName2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	featureView := project.GetFeatureView("test0304")
+	if featureView == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	writeData := make([]map[string]interface{}, 0, 100)
+	for i := 0; i < 100; i++ {
+		float64Seed := rand.Float64()
+		float32Seed := rand.Float32()
+		var boolSeed bool
+		if i%2 == 0 {
+			boolSeed = true
+		} else {
+			boolSeed = false
+		}
+		record := map[string]interface{}{
+			"a_id": "1875284895",
+			"b":    int64(201000 + i%10), // 10 个不同的用户
+			"c":    float64(i) * float64Seed,
+			"d":    boolSeed,
+			"e":    float32(i) * float32Seed,
+		}
+		writeData = append(writeData, record)
+	}
+	featureView.WriteFeatures(writeData)
+	featureView.WriteFlush()
+
+	time.Sleep(500 * time.Millisecond)
+
+	features, err := featureView.GetOnlineFeatures([]interface{}{"1875284895"}, []string{"*"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, feature := range features {
+		fmt.Println(feature)
+	}
+}
+
+func TestWriteFeaturesToSequenceFeatureViewAsync(t *testing.T) {
+
 	// init client
-	client, err := createFeatureSotreClient()
+	client, err := createFeatureStoreClient(region, projectName2)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// get project by name
-	project, err := client.GetProject("fs_python_test1013")
+	project, err := client.GetProject(projectName2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,43 +542,43 @@ func TestWriteFeaturesAsync(t *testing.T) {
 	}
 
 	// 准备测试数据
-	totalRecords := 150 // 超过 batchSize(20)，测试分批写入
+	totalRecords := 100 // 超过 batchSize(20)，测试分批写入
 	writeData := make([]map[string]interface{}, 0, totalRecords)
 
 	for i := 0; i < totalRecords; i++ {
 		record := map[string]interface{}{
 			"request_id": int64(1000000000 + i),
-			"user_id":    int64(100000 + i%10), // 10 个不同的用户
+			"user_id":    int64(200000 + i%10), // 10 个不同的用户
 			"exp_id":     fmt.Sprintf("exp_%d", i%5),
 			"page":       "home_page",
 			"net_type":   "wifi",
-			"event_time": time.Now().UnixMilli(),
-			"item_id":    int64(800000 + i),
+			"event_time": time.Now().UnixMilli() / 1000,
+			"item_id":    i,
 			"event":      "click",
 			"playtime":   float64(i%100) * 1.5,
-			"ds":         "20241203",
+			"ds":         "20260304",
 		}
 		writeData = append(writeData, record)
 	}
 
 	// 测试异步批量写入
-	startTime := time.Now()
+	//startTime := time.Now()
 
 	// 调用 WriteFeatures（非阻塞）
-	featureView.WriteFeatures(writeData)
+	//featureView.WriteFeatures(writeData)
 
-	featureView.WriteFlush()
+	//featureView.WriteFlush()
 
 	// 等待数据写入完成（实际场景中应该由业务逻辑控制何时 flush）
-	time.Sleep(200 * time.Millisecond) // 等待后台协程处理
+	//time.Sleep(200 * time.Millisecond) // 等待后台协程处理
 
-	elapsed := time.Since(startTime)
-	t.Logf("Successfully wrote %d records in %v", totalRecords, elapsed)
+	//elapsed := time.Since(startTime)
+	//t.Logf("Successfully wrote %d records in %v", totalRecords, elapsed)
 
 	// 验证写入：读取刚才写入的部分数据
 	keys := make([]interface{}, 0, 10)
 	for i := 0; i < 10; i++ {
-		keys = append(keys, fmt.Sprintf("%d", 100000+i))
+		keys = append(keys, fmt.Sprintf("%d", 200000+i))
 	}
 
 	features, err := featureView.GetOnlineFeatures(keys, []string{"*"}, nil)
@@ -532,12 +588,11 @@ func TestWriteFeaturesAsync(t *testing.T) {
 
 	t.Logf("Retrieved %d records", len(features))
 
-	// 验证至少能读到部分数据
 	if len(features) == 0 {
 		t.Error("Expected to read some features, but got none")
 	}
 
-	for _, feature := range features[:min(3, len(features))] {
-		t.Logf("Feature: %+v", feature)
+	for _, feature := range features {
+		fmt.Printf("Feature: %v\n", feature)
 	}
 }

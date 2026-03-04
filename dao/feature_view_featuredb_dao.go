@@ -1447,7 +1447,7 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 		insertMode := constants.Unknown
 		for _, item := range data {
 			if mode, exists := item["__insert_mode__"]; exists {
-				if m, ok := mode.(constants.InsertMode); ok {
+				if m, ok := mode.(string); ok {
 					insertMode = m
 				}
 				delete(item, "__insert_mode__")

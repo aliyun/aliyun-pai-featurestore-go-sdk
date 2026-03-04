@@ -31,11 +31,6 @@ type FeatureViewHologresDao struct {
 	onlineTable  string
 }
 
-func (d *FeatureViewHologresDao) WriteFlush() {
-	//TODO implement me
-	panic("implement me")
-}
-
 func NewFeatureViewHologresDao(config DaoConfig) *FeatureViewHologresDao {
 	dao := FeatureViewHologresDao{
 		table:           config.HologresTableName,

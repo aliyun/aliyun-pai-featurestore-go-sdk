@@ -319,7 +319,7 @@ func (f *BaseFeatureView) WriteFeatureDB(data []map[string]interface{}) {
 	f.featureViewDao.WriteFeatures(data)
 }
 
-func (f *BaseFeatureView) WriteFeaturesWithMode(data []map[string]interface{}, insertMode constants.InsertMode) {
+func (f *BaseFeatureView) WriteFeaturesWithMode(data []map[string]interface{}, insertMode string) {
 	if len(data) == 0 {
 		return
 	}
@@ -467,9 +467,9 @@ func (f *BaseFeatureView) WriteFeatures(data []map[string]interface{}) error {
 	return nil
 }
 
-func (f *BaseFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, inserMode constants.InsertMode) {
+func (f *BaseFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string) {
 	for _, item := range data {
-		item["__insert_mode__"] = inserMode
+		item["__insert_mode__"] = insertMode
 	}
 	f.featureViewDao.WriteFeatures(data)
 }

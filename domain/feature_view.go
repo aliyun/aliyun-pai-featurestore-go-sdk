@@ -29,7 +29,7 @@ type FeatureView interface {
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
 
 	WriteFeatures(data []map[string]interface{}) error
-	WriteFeaturesWithInsertMode(data []map[string]interface{}, inserMode constants.InsertMode)
+	WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string)
 
 	WriteFlush()
 

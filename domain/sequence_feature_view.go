@@ -387,7 +387,7 @@ func (f *SequenceFeatureView) ScanAndIterateData(filter string, ch chan<- string
 	return nil, errors.New("unimplemented")
 }
 
-func (f *SequenceFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, inserMode constants.InsertMode) {
+func (f *SequenceFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string) {
 	f.featureViewDao.WriteFeatures(data)
 }
 
