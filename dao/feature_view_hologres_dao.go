@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"hash/crc32"
@@ -54,7 +55,7 @@ func (d *FeatureViewHologresDao) getStmt(key uint32) *sql.Stmt {
 	defer d.mu.RUnlock()
 	return d.stmtMap[key]
 }
-func (d *FeatureViewHologresDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
+func (d *FeatureViewHologresDao) GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 
 	selector := make([]string, 0, len(selectFields))
 	for _, field := range selectFields {
@@ -91,7 +92,7 @@ func (d *FeatureViewHologresDao) GetFeatures(keys []interface{}, selectFields []
 		}
 	}
 
-	rows, err := stmt.Query(args...)
+	rows, err := stmt.QueryContext(ctx, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +121,7 @@ func (d *FeatureViewHologresDao) GetFeatures(keys []interface{}, selectFields []
 	return result, nil
 }
 
-func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewHologresDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
 	var selectFields []string
 	if sequenceConfig.PlayTimeField == "" {
 		selectFields = []string{fmt.Sprintf("\"%s\"", sequenceConfig.ItemIdField), fmt.Sprintf("\"%s\"", sequenceConfig.EventField),
@@ -168,7 +169,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 				d.mu.Unlock()
 			}
 		}
-		rows, err := stmt.Query(args...)
+		rows, err := stmt.QueryContext(ctx, args...)
 		if err != nil {
 			log.Println(err)
 			return nil
@@ -237,7 +238,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 			}
 		}
 
-		rows, err := stmt.Query(args...)
+		rows, err := stmt.QueryContext(ctx, args...)
 		if err != nil {
 			log.Println(err)
 			return nil
@@ -336,7 +337,7 @@ func (d *FeatureViewHologresDao) GetUserSequenceFeature(keys []interface{}, user
 
 }
 
-func (d *FeatureViewHologresDao) GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewHologresDao) GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
 	selector := make([]string, 0, len(selectFields))
 	for _, field := range selectFields {
 		selector = append(selector, fmt.Sprintf("\"%s\"", field))
@@ -375,7 +376,7 @@ func (d *FeatureViewHologresDao) GetUserBehaviorFeature(userIds []interface{}, e
 				d.mu.Unlock()
 			}
 		}
-		rows, err := stmt.Query(args...)
+		rows, err := stmt.QueryContext(ctx, args...)
 		if err != nil {
 			log.Println(err)
 			return nil
@@ -434,7 +435,7 @@ func (d *FeatureViewHologresDao) GetUserBehaviorFeature(userIds []interface{}, e
 				d.mu.Unlock()
 			}
 		}
-		rows, err := stmt.Query(args...)
+		rows, err := stmt.QueryContext(ctx, args...)
 		if err != nil {
 			log.Println(err)
 			return nil

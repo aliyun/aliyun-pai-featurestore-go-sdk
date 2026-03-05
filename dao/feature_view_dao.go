@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sort"
@@ -19,6 +20,12 @@ type FeatureViewDao interface {
 	GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
 	GetUserAggregatedSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error)
 	GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
+
+	GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error)
+	GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
+	GetUserAggregatedSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error)
+	GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
+
 	RowCount(string) int
 	RowCountIds(string) ([]string, int, error)
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
@@ -28,17 +35,31 @@ type UnimplementedFeatureViewDao struct {
 }
 
 func (d *UnimplementedFeatureViewDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
-	return nil, nil
+	return d.GetFeaturesWithContext(context.Background(), keys, selectFields, weight)
 }
 func (d *UnimplementedFeatureViewDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
-	return nil, nil
+	return d.GetUserSequenceFeatureWithContext(context.Background(), keys, userIdField, sequenceConfig, onlineConfig)
 }
 func (d *UnimplementedFeatureViewDao) GetUserAggregatedSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error) {
-	return nil, nil
+	return d.GetUserAggregatedSequenceFeatureWithContext(context.Background(), keys, userIdField, sequenceConfig, onlineConfig)
 }
 func (d *UnimplementedFeatureViewDao) GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	return d.GetUserBehaviorFeatureWithContext(context.Background(), userIds, events, selectFields, sequenceConfig)
+}
+
+func (d *UnimplementedFeatureViewDao) GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 	return nil, nil
 }
+func (d *UnimplementedFeatureViewDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+func (d *UnimplementedFeatureViewDao) GetUserAggregatedSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (d *UnimplementedFeatureViewDao) GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+
 func (d *UnimplementedFeatureViewDao) RowCount(string) int {
 	return 0
 }
