@@ -665,8 +665,8 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				return nil
 			}
 		}
-		defer response.Body.Close() // 确保关闭response.Body
-		// 检查状态码
+		defer response.Body.Close()
+
 		if response.StatusCode != http.StatusOK {
 			bodyBytes, err := io.ReadAll(response.Body)
 			if err != nil {
@@ -687,7 +687,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 		for {
 			buf, err := deserialize(reader, headerBuf)
 			if err == io.EOF {
-				break // End of stream
+				break
 			}
 			if err != nil {
 				errChan <- err
@@ -1369,7 +1369,6 @@ func (d *FeatureViewFeatureDBDao) WriteFlush() {
 
 	log.Printf("write flush %d", len(d.writeData))
 
-	// 停止后台协程
 	d.running = false
 	close(d.stopChan)
 
@@ -1378,7 +1377,6 @@ func (d *FeatureViewFeatureDBDao) WriteFlush() {
 		dataToWrite := d.writeData
 		d.writeData = make([]map[string]interface{}, 0, 100)
 
-		// 异步写入（不等待完成）
 		go func(batch []map[string]interface{}) {
 			if err := d.writeFeatureDB(batch); err != nil {
 				log.Printf("request featuredb error: %s", err.Error())
@@ -1395,14 +1393,12 @@ func (d *FeatureViewFeatureDBDao) WriteFlush() {
 func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
 	threadName := fmt.Sprintf("FeatureDBWriter-%s", d.table)
 
-	// 创建定时器，每 50ms 检查一次
 	d.flushTicker = time.NewTicker(50 * time.Millisecond)
 	defer d.flushTicker.Stop()
 
 	for d.running {
 		select {
 		case <-d.flushTicker.C:
-			// 定期检查是否有数据需要写入
 			d.mu.Lock()
 			if len(d.writeData) > 0 {
 				dataToWrite := d.writeData
@@ -1430,7 +1426,6 @@ func (d *FeatureViewFeatureDBDao) WriteFeatures(data []map[string]interface{}) {
 
 	d.writeData = append(d.writeData, data...)
 
-	// 如果达到批次大小，发送信号
 	if len(d.writeData) >= d.batchSize {
 		d.cond.Signal()
 	}
@@ -1504,8 +1499,7 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 				return nil
 			}
 		}
-		defer response.Body.Close() // 确保关闭response.Body
-		// 检查状态码
+		defer response.Body.Close()
 		if response.StatusCode != http.StatusOK {
 			bodyBytes, err := io.ReadAll(response.Body)
 			if err != nil {
@@ -1523,8 +1517,6 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 
 		return nil
 	}
-
-	// 并发写入，size 为 20
 
 	for i := 0; i < numBatches; i++ {
 		start := i * batchSize
