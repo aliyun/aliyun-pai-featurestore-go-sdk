@@ -33,6 +33,13 @@ type FeatureView interface {
 	// ScanAndIterateData gets the primary key list  by the given expression
 	// If stream feature view can iterate the data deliver to the channel
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
+
+	WriteFeatures(data []map[string]interface{}) error
+	WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string)
+
+	WriteFlush()
+
+	Close() error
 }
 
 func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) FeatureView {

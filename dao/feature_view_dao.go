@@ -29,6 +29,10 @@ type FeatureViewDao interface {
 	RowCount(string) int
 	RowCountIds(string) ([]string, int, error)
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
+	WriteFeatures(data []map[string]interface{})
+	WriteFlush()
+
+	Close() error
 }
 
 type UnimplementedFeatureViewDao struct {
@@ -68,6 +72,14 @@ func (d *UnimplementedFeatureViewDao) RowCountIds(string) ([]string, int, error)
 }
 func (d *UnimplementedFeatureViewDao) ScanAndIterateData(filter string, ch chan<- string) ([]string, error) {
 	return nil, nil
+}
+
+func (d *UnimplementedFeatureViewDao) WriteFeatures(data []map[string]interface{}) {}
+
+func (d *UnimplementedFeatureViewDao) WriteFlush() {}
+
+func (d *UnimplementedFeatureViewDao) Close() error {
+	return nil
 }
 
 func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
