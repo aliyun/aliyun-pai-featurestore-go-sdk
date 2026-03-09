@@ -11,7 +11,7 @@ require (
 	github.com/aliyun/aliyun-tablestore-go-sdk v1.7.7
 	github.com/aliyun/credentials-go v1.4.6
 	github.com/antihax/optional v1.0.0
-	github.com/expr-lang/expr v1.16.9
+	github.com/expr-lang/expr v1.17.7
 	github.com/google/flatbuffers v2.0.8+incompatible
 	github.com/huandu/go-sqlbuilder v1.21.0
 	github.com/lib/pq v1.10.9
