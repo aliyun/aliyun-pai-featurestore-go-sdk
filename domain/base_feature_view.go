@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
@@ -276,4 +275,41 @@ func (f *BaseFeatureView) RowCountIds(expr string) ([]string, int, error) {
 // ScanAndIterateData implements FeatureView.
 func (f *BaseFeatureView) ScanAndIterateData(filter string, ch chan<- string) ([]string, error) {
 	return f.featureViewDao.ScanAndIterateData(filter, ch)
+}
+
+func (f *BaseFeatureView) WriteFeatureDB(data []map[string]interface{}) {
+	f.featureViewDao.WriteFeatures(data)
+}
+
+func (f *BaseFeatureView) WriteFeaturesWithMode(data []map[string]interface{}, insertMode string) {
+	if len(data) == 0 {
+		return
+	}
+	filteredData := make([]map[string]interface{}, 0, len(data))
+
+	for _, item := range data {
+		if len(item) > 0 {
+			// 添加插入模式标记
+			item["__insert_mode__"] = insertMode
+			filteredData = append(filteredData, item)
+		}
+	}
+
+	f.featureViewDao.WriteFeatures(filteredData)
+}
+
+func (f *BaseFeatureView) WriteFeatures(data []map[string]interface{}) error {
+	f.featureViewDao.WriteFeatures(data)
+	return nil
+}
+
+func (f *BaseFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string) {
+	for _, item := range data {
+		item["__insert_mode__"] = insertMode
+	}
+	f.featureViewDao.WriteFeatures(data)
+}
+
+func (f *BaseFeatureView) WriteFlush() {
+	f.featureViewDao.WriteFlush()
 }

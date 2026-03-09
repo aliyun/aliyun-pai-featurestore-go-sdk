@@ -2,9 +2,11 @@ package featurestore
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"fortio.org/assert"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
@@ -462,5 +464,154 @@ func TestScanAndIterateData(t *testing.T) {
 			}
 		}
 	})
+
+}
+
+const (
+	projectName2 = "fs_python_test1013"
+)
+
+func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
+	client, err := createFeatureStoreClient(region, projectName2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	project, err := client.GetProject(projectName2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	onlineFeatureView := "test0304" //"test_pro1"
+	//onlineFeatureView2 := "complex_features"
+	//offlineFeatureView := "feature_view_users"
+	featureView := project.GetFeatureView(onlineFeatureView)
+	if featureView == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	writeData := make([]map[string]interface{}, 0, 10)
+
+	for i := 10; i < 20; i++ {
+		//online featureView
+		int32Seed := rand.Int31()
+		//float64Seed := rand.Float64()
+		float32Seed := rand.Float32()
+		//var boolSeed bool
+		//if i%2 == 0 {
+		//	boolSeed = true
+		//} else {
+		//	boolSeed = false
+		//}
+		record := map[string]interface{}{
+			"a_id": fmt.Sprintf("%d", 185284895+i),
+			//"b":    int64(23201000 + i), // 10 个不同的用户
+			//"c":    float64(i) * float64Seed,
+			//"d":    boolSeed,
+			"e": float32(i) * float32Seed,
+			"f": int32(i) * int32Seed,
+			"g": time.Now().UnixMilli(),
+		}
+
+		//offine featureView
+		//record := map[string]interface{}{
+		//	"user_md5":      fmt.Sprintf("%d", 185284895+i),
+		//	"user_nickname": uuid.NewV1().String()[0:8],
+		//}
+
+		writeData = append(writeData, record)
+	}
+
+	featureView.WriteFeatures(writeData)
+	//featureView.WriteFeaturesWithInsertMode(writeData, constants.PartialFieldWrite)
+	featureView.WriteFlush()
+
+	time.Sleep(3 * time.Second)
+
+	features, err := featureView.GetOnlineFeatures([]interface{}{"185284905", "185284906", "185284907", "185284908", "185284909"}, []string{"*"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(features) == 0 {
+		t.Fatal("get online feature none")
+	}
+
+	for _, feature := range features {
+		fmt.Println(feature)
+	}
+}
+
+func TestWriteFeaturesToSequenceFeatureViewAsync(t *testing.T) {
+
+	// init client
+	client, err := createFeatureStoreClient(region, projectName2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get project by name
+	project, err := client.GetProject(projectName2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// get featureview by name
+	featureView := project.GetFeatureView("seq_test60")
+	if featureView == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	joinIds := []interface{}{int64(185284895), int64(185284896), int64(185284897), int64(185284898), int64(185284899)}
+
+	recordsPerUser := 10 // 每个用户 10 条记录
+	writeData := make([]map[string]interface{}, 0, len(joinIds)*recordsPerUser)
+
+	events := []string{"click", "expr"}
+	pages := []string{"home_page", "detail_page", "list_page", "search_page"}
+	netTypes := []string{"wifi", "4g", "5g"}
+
+	for _, joinId := range joinIds {
+		baseTime := time.Now().Add(-time.Duration(len(joinIds)*recordsPerUser) * time.Minute)
+
+		for i := 0; i < recordsPerUser; i++ {
+			row := make(map[string]interface{})
+
+			row["user_id"] = joinId
+
+			row["request_id"] = int64(rand.Intn(1000000))
+			row["exp_id"] = fmt.Sprintf("exp_%d", rand.Intn(100))
+			row["page"] = pages[rand.Intn(len(pages))]
+			row["net_type"] = netTypes[rand.Intn(len(netTypes))]
+
+			eventTime := baseTime.Add(time.Duration(i) * time.Minute)
+			row["event_time"] = eventTime.UnixMilli()
+
+			row["item_id"] = int64(800000 + rand.Intn(10000))
+			row["event"] = events[rand.Intn(len(events))]
+			row["playtime"] = rand.Float64() * 100.0
+
+			writeData = append(writeData, row)
+		}
+	}
+
+	featureView.WriteFeatures(writeData)
+	//featureView.WriteFeaturesWithInsertMode(writeData, constants.PartialFieldWrite)
+	featureView.WriteFlush()
+
+	// 等待数据写入完成（实际场景中应该由业务逻辑控制何时 flush）
+	time.Sleep(3 * time.Second)
+	features, err := featureView.GetOnlineFeatures([]interface{}{185284895, 185284896, 185284897, 185284898, 185284899}, []string{"*"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(features) == 0 {
+		t.Error("Expected to read some features, but got none")
+	}
+
+	for _, feature := range features {
+		fmt.Printf("Feature: %v\n", feature)
+	}
 
 }

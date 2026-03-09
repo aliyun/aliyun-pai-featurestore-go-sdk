@@ -421,3 +421,55 @@ func (f *SequenceFeatureView) RowCountIds(string) ([]string, int, error) {
 func (f *SequenceFeatureView) ScanAndIterateData(filter string, ch chan<- string) ([]string, error) {
 	return nil, errors.New("unimplemented")
 }
+
+func (f *SequenceFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string) {
+	f.featureViewDao.WriteFeatures(data)
+}
+
+func (f *SequenceFeatureView) WriteFlush() {
+	f.featureViewDao.WriteFlush()
+}
+
+func (f *SequenceFeatureView) WriteFeatures(data []map[string]interface{}) error {
+	sequenceFeatureViewConfig := api.FeatureViewSeqConfig{}
+	err := json.Unmarshal([]byte(f.Config), &sequenceFeatureViewConfig)
+	if err != nil {
+		return err
+	}
+
+	itemIdField := sequenceFeatureViewConfig.ItemIdField
+	eventField := sequenceFeatureViewConfig.EventField
+	timestampField := sequenceFeatureViewConfig.TimestampField
+	playTimeField := sequenceFeatureViewConfig.PlayTimeField
+
+	if data == nil || len(data) == 0 {
+		return nil
+	}
+
+	for i, featureMap := range data {
+		itemIdValue, exists := featureMap[itemIdField]
+		if !exists || itemIdValue == nil || fmt.Sprintf("%v", itemIdValue) == "" {
+			return fmt.Errorf("field '%s' must not be null or empty for record at index %d", itemIdField, i)
+		}
+		eventValue, exists := featureMap[eventField]
+		if !exists || eventValue == nil || fmt.Sprintf("%v", eventValue) == "" {
+			return fmt.Errorf("field '%s' must not be null or empty for record at index %d", eventField, i)
+		}
+		timestampValue, exists := featureMap[timestampField]
+		if !exists || timestampValue == nil {
+			return fmt.Errorf("field '%s' must not be null for record at index %d", timestampField, i)
+		}
+		if timestampValue == 0 {
+			return fmt.Errorf("field '%s' must not be null for record at index %d", timestampField, i)
+		}
+
+		playTimeValue, exists := featureMap[playTimeField]
+		if !exists || playTimeValue == nil {
+			return fmt.Errorf("field '%s' must not be null or empty for record at index %d", playTimeField, i)
+		}
+
+	}
+
+	f.featureViewDao.WriteFeatures(data)
+	return nil
+}
