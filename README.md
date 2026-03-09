@@ -459,7 +459,7 @@ features, err := model_feature.GetOnlineFeaturesWithEntity(map[string][]interfac
     // 4. 强制刷新（全部数据写入完成后，刷新清理一次）
     featureView.WriteFlush()
     
-    // 目前 SDK 也支持部分字段的写入。 上面的例子中，调用 WriteFeatures 方法，默认是整行替换的，哪怕 writeData 中只包含部分字段。如果只想部分字段 的更新，可以调用指定的部分字段写入模式, 参数 constants.PartialFieldWrite或者直接传字符串PartialFieldWrite即可。
+    // 目前 SDK 也支持部分字段的写入。 上面的例子中，调用 WriteFeatures 方法，默认是整行替换的。如果只想部分字段 的更新，可以调用指定的部分字段写入模式, 参数 constants.PartialFieldWrite或者直接传字符串PartialFieldWrite即可。
     featureView.WriteFeaturesWithInsertMode(writeData, constants.PartialFieldWrite)
    
     // 5. 验证
