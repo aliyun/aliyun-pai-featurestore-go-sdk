@@ -32,8 +32,6 @@ type FeatureView interface {
 	WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string)
 
 	WriteFlush()
-
-	Close() error
 }
 
 func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) FeatureView {

@@ -24,8 +24,6 @@ type FeatureViewDao interface {
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
 	WriteFeatures(data []map[string]interface{})
 	WriteFlush()
-
-	Close() error
 }
 
 type UnimplementedFeatureViewDao struct {
@@ -56,10 +54,6 @@ func (d *UnimplementedFeatureViewDao) ScanAndIterateData(filter string, ch chan<
 func (d *UnimplementedFeatureViewDao) WriteFeatures(data []map[string]interface{}) {}
 
 func (d *UnimplementedFeatureViewDao) WriteFlush() {}
-
-func (d *UnimplementedFeatureViewDao) Close() error {
-	return nil
-}
 
 func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 	if config.DatasourceType == constants.Datasource_Type_Hologres {

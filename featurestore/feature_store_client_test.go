@@ -2,8 +2,6 @@ package featurestore
 
 import (
 	"fmt"
-	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
-	uuid "github.com/satori/go.uuid"
 	"math/rand"
 	"os"
 	"strings"
@@ -469,63 +467,6 @@ func TestScanAndIterateData(t *testing.T) {
 
 }
 
-func transfer(featureNameMap map[string]constants.FSType, joinIds []interface{}, joinIdName string) ([]map[string]interface{}, error) {
-	var data []map[string]interface{}
-	featureNames := make([]string, 0, len(featureNameMap))
-	for _, joinId := range joinIds {
-		row := make(map[string]interface{})
-		row[joinIdName] = joinId
-		for featureName, featureType := range featureNameMap {
-			featureNames = append(featureNames, featureName)
-
-			switch featureType {
-			case constants.FS_INT32, constants.FS_INT64:
-				row[featureName] = rand.Intn(100)
-			case constants.FS_FLOAT:
-				row[featureName] = 100 * rand.Float32()
-			case constants.FS_DOUBLE:
-				row[featureName] = 100 * rand.Float64()
-			case constants.FS_STRING:
-				row[featureName] = fmt.Sprintf("test_%d", rand.Intn(100))
-			case constants.FS_BOOLEAN:
-				row[featureName] = rand.Intn(2) == 1
-			case constants.FS_TIMESTAMP:
-				row[featureName] = time.Now().UnixMilli() //毫秒
-			case constants.FS_ARRAY_INT32, constants.FS_ARRAY_INT64:
-				row[featureName] = []int{rand.Intn(100), rand.Intn(100)}
-			case constants.FS_ARRAY_FLOAT:
-				row[featureName] = []float32{100 * rand.Float32(), 100 * rand.Float32()}
-			case constants.FS_ARRAY_DOUBLE:
-				row[featureName] = []float64{100 * rand.Float64(), 100 * rand.Float64()}
-			case constants.FS_ARRAY_STRING:
-				row[featureName] = []string{fmt.Sprintf("test_%d", rand.Intn(100)), fmt.Sprintf("test_%d", rand.Intn(100))}
-			case constants.FS_ARRAY_ARRAY_FLOAT:
-				row[featureName] = [][]float32{{100 * rand.Float32(), 100 * rand.Float32()}, {100 * rand.Float32(), 100 * rand.Float32()}}
-			case constants.FS_MAP_INT32_INT32, constants.FS_MAP_INT32_INT64, constants.FS_MAP_INT64_INT32, constants.FS_MAP_INT64_INT64:
-				row[featureName] = map[int]int{rand.Intn(100): rand.Intn(100), rand.Intn(100): rand.Intn(100)}
-			case constants.FS_MAP_INT32_FLOAT, constants.FS_MAP_INT64_FLOAT:
-				row[featureName] = map[int]float32{rand.Intn(100): 100 * rand.Float32(), rand.Intn(100): 100 * rand.Float32()}
-			case constants.FS_MAP_INT32_DOUBLE, constants.FS_MAP_INT64_DOUBLE:
-				row[featureName] = map[int]float64{rand.Intn(100): 100 * rand.Float64(), rand.Intn(100): 100 * rand.Float64()}
-			case constants.FS_MAP_INT32_STRING, constants.FS_MAP_INT64_STRING:
-				row[featureName] = map[int]string{rand.Intn(100): fmt.Sprintf("test_%d", rand.Intn(100)), rand.Intn(100): fmt.Sprintf("test_%d", rand.Intn(100))}
-			case constants.FS_MAP_STRING_INT32, constants.FS_MAP_STRING_INT64:
-				row[featureName] = map[string]int{fmt.Sprintf("test_%d", rand.Intn(100)): rand.Intn(100), fmt.Sprintf("test_%d", rand.Intn(100)): rand.Intn(100)}
-			case constants.FS_MAP_STRING_FLOAT:
-				row[featureName] = map[string]float32{fmt.Sprintf("test_%d", rand.Intn(100)): 100 * rand.Float32(), fmt.Sprintf("test_%d", rand.Intn(100)): 100 * rand.Float32()}
-			case constants.FS_MAP_STRING_DOUBLE:
-				row[featureName] = map[string]float64{fmt.Sprintf("test_%d", rand.Intn(100)): 100 * rand.Float64(), fmt.Sprintf("test_%d", rand.Intn(100)): 100 * rand.Float64()}
-			case constants.FS_MAP_STRING_STRING:
-				row[featureName] = map[string]string{fmt.Sprintf("test_%d", rand.Intn(100)): fmt.Sprintf("test_%d", rand.Intn(100)), fmt.Sprintf("test_%d", rand.Intn(100)): fmt.Sprintf("test_%d", rand.Intn(100))}
-			default:
-				return data, fmt.Errorf("unsupported feature type: %v", featureType)
-			}
-		}
-		data = append(data, row)
-	}
-	return data, nil
-}
-
 const (
 	projectName2 = "fs_python_test1013"
 )
@@ -541,7 +482,7 @@ func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	onlineFeatureView := "test_pro1" //"test0304"
+	onlineFeatureView := "test0304" //"test_pro1"
 	//onlineFeatureView2 := "complex_features"
 	//offlineFeatureView := "feature_view_users"
 	featureView := project.GetFeatureView(onlineFeatureView)
@@ -550,89 +491,35 @@ func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 	}
 
 	writeData := make([]map[string]interface{}, 0, 10)
-	joinIds := make([]interface{}, 10)
-	for i := 0; i < 10; i++ { // 10 个不同的用户
-		int64Seed := rand.Int63n(10000000)
-		int32Seed := rand.Int31n(1000)
+
+	for i := 10; i < 20; i++ {
+		//online featureView
+		int32Seed := rand.Int31()
+		//float64Seed := rand.Float64()
 		float32Seed := rand.Float32()
-		float64Seed := rand.Float64()
-		joinIds[i] = int64Seed
+		//var boolSeed bool
+		//if i%2 == 0 {
+		//	boolSeed = true
+		//} else {
+		//	boolSeed = false
+		//}
 		record := map[string]interface{}{
-			"user_id":       fmt.Sprintf("%d", int64Seed),
-			"string_field":  uuid.NewV1().String()[0:8],
-			"int32_field":   int32(i) * int32Seed,
-			"int64_field":   int64(i) * int64Seed,
-			"float_field":   float32(i) * float32Seed,
-			"double_field":  float64(i) * float64Seed,
-			"boolean_field": i%2 == 0,
+			"a_id": fmt.Sprintf("%d", 185284895+i),
+			//"b":    int64(23201000 + i), // 10 个不同的用户
+			//"c":    float64(i) * float64Seed,
+			//"d":    boolSeed,
+			"e": float32(i) * float32Seed,
+			"f": int32(i) * int32Seed,
+			"g": time.Now().UnixMilli(),
 		}
+
+		//offine featureView
+		//record := map[string]interface{}{
+		//	"user_md5":      fmt.Sprintf("%d", 185284895+i),
+		//	"user_nickname": uuid.NewV1().String()[0:8],
+		//}
+
 		writeData = append(writeData, record)
-	}
-
-	//for i := 10; i < 20; i++ {
-	//	//online featureView
-	//	int32Seed := rand.Int31()
-	//	//float64Seed := rand.Float64()
-	//	float32Seed := rand.Float32()
-	//	//var boolSeed bool
-	//	//if i%2 == 0 {
-	//	//	boolSeed = true
-	//	//} else {
-	//	//	boolSeed = false
-	//	//}
-	//	record := map[string]interface{}{
-	//		"a_id": fmt.Sprintf("%d", 185284895+i),
-	//		//"b":    int64(23201000 + i), // 10 个不同的用户
-	//		//"c":    float64(i) * float64Seed,
-	//		//"d":    boolSeed,
-	//		"e": float32(i) * float32Seed,
-	//		"f": int32(i) * int32Seed,
-	//		"g": time.Now().UnixMilli(),
-	//	}
-	//
-	//	//offine featureView
-	//	//record := map[string]interface{}{
-	//	//	"user_md5":      fmt.Sprintf("%d", 185284895+i),
-	//	//	"user_nickname": uuid.NewV1().String()[0:8],
-	//	//}
-	//
-	//	writeData = append(writeData, record)
-	//
-	//}
-
-	//featuresType := map[string]constants.FSType{
-	//	"arr1":  constants.FS_ARRAY_INT32,
-	//	"arr2":  constants.FS_ARRAY_INT64,
-	//	"arr3":  constants.FS_ARRAY_FLOAT,
-	//	"arr4":  constants.FS_ARRAY_DOUBLE,
-	//	"arr5":  constants.FS_ARRAY_STRING,
-	//	"arr6":  constants.FS_ARRAY_ARRAY_FLOAT,
-	//	"map1":  constants.FS_MAP_INT32_INT32,
-	//	"map2":  constants.FS_MAP_INT32_INT64,
-	//	"map3":  constants.FS_MAP_INT32_FLOAT,
-	//	"map4":  constants.FS_MAP_INT32_DOUBLE,
-	//	"map5":  constants.FS_MAP_INT32_STRING,
-	//	"map6":  constants.FS_MAP_INT64_INT32,
-	//	"map7":  constants.FS_MAP_INT64_INT64,
-	//	"map8":  constants.FS_MAP_INT32_FLOAT,
-	//	"map9":  constants.FS_MAP_INT32_DOUBLE,
-	//	"map10": constants.FS_MAP_INT32_STRING,
-	//	"map11": constants.FS_MAP_INT64_INT32,
-	//	"map12": constants.FS_MAP_INT64_INT64,
-	//	"map13": constants.FS_MAP_INT64_FLOAT,
-	//	"map14": constants.FS_MAP_INT64_DOUBLE,
-	//	"map15": constants.FS_MAP_INT64_STRING,
-	//	"map16": constants.FS_MAP_STRING_INT32,
-	//	"map17": constants.FS_MAP_STRING_INT64,
-	//	"map18": constants.FS_MAP_STRING_FLOAT,
-	//	"map19": constants.FS_MAP_STRING_DOUBLE,
-	//	"map20": constants.FS_MAP_STRING_STRING,
-	//}
-
-	//joinIds := []interface{}{"185284895", "185284896", "185284897", "185284898", "185284899"}
-	//writeData, err = transfer(featuresType, joinIds, "m_id")
-	if err != nil {
-		t.Fatal(err)
 	}
 
 	featureView.WriteFeatures(writeData)
@@ -641,8 +528,7 @@ func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 
 	time.Sleep(3 * time.Second)
 
-	//features, err := featureView.GetOnlineFeatures([]interface{}{"185284905", "185284906", "185284907", "185284908", "185284909"}, []string{"*"}, nil)
-	features, err := featureView.GetOnlineFeatures(joinIds, []string{"*"}, nil)
+	features, err := featureView.GetOnlineFeatures([]interface{}{"185284905", "185284906", "185284907", "185284908", "185284909"}, []string{"*"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -691,16 +577,13 @@ func TestWriteFeaturesToSequenceFeatureViewAsync(t *testing.T) {
 		for i := 0; i < recordsPerUser; i++ {
 			row := make(map[string]interface{})
 
-			// ✅ 主键设置为 int64（同一个用户）
 			row["user_id"] = joinId
 
-			// ✅ 其他字段随机生成（每条记录不同）
 			row["request_id"] = int64(rand.Intn(1000000))
 			row["exp_id"] = fmt.Sprintf("exp_%d", rand.Intn(100))
 			row["page"] = pages[rand.Intn(len(pages))]
 			row["net_type"] = netTypes[rand.Intn(len(netTypes))]
 
-			// ✅ 时间递增（模拟真实行为序列）
 			eventTime := baseTime.Add(time.Duration(i) * time.Minute)
 			row["event_time"] = eventTime.UnixMilli()
 

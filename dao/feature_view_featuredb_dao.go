@@ -1391,8 +1391,6 @@ func (d *FeatureViewFeatureDBDao) WriteFlush() {
 }
 
 func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
-	threadName := fmt.Sprintf("FeatureDBWriter-%s", d.table)
-
 	d.flushTicker = time.NewTicker(50 * time.Millisecond)
 	defer d.flushTicker.Stop()
 
@@ -1414,7 +1412,6 @@ func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
 			d.mu.Unlock()
 
 		case <-d.stopChan:
-			log.Printf("%s has stopped.", threadName)
 			return
 		}
 	}
@@ -1429,6 +1426,7 @@ func (d *FeatureViewFeatureDBDao) WriteFeatures(data []map[string]interface{}) {
 	if len(d.writeData) >= d.batchSize {
 		d.cond.Signal()
 	}
+
 }
 
 // 实时写入数据
@@ -1547,7 +1545,6 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 	return nil
 }
 
-// ... existing code ...
 func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int, error) {
 	start := time.Now()
 	snapshotId, _, err := d.createSnapshot()
@@ -2129,15 +2126,4 @@ func (d *FeatureViewFeatureDBDao) ScanAndIterateData(filter string, ch chan<- st
 	}
 
 	return ids, nil
-}
-
-func (d *FeatureViewFeatureDBDao) Close() error {
-	d.mu.Lock()
-	d.running = false
-	d.cond.Signal()
-	d.mu.Unlock()
-
-	// 刷新剩余数据
-	d.WriteFlush()
-	return nil
 }

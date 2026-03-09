@@ -438,7 +438,3 @@ func (f *SequenceFeatureView) WriteFeatures(data []map[string]interface{}) error
 	f.featureViewDao.WriteFeatures(data)
 	return nil
 }
-
-func (f *SequenceFeatureView) Close() error {
-	return f.featureViewDao.Close()
-}

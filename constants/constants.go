@@ -54,7 +54,7 @@ const (
 )
 
 const (
-	Unknown           = "Unknown"
-	FullRowWrite      = "FullRowWrite"
-	PartialFieldWrite = "PartialFieldWrite"
+	Unknown             = "Unknown"
+	Full_Row_Write      = "FullRowWrite"
+	Partial_Field_Write = "PartialFieldWrite"
 )
