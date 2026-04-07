@@ -163,8 +163,25 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 
 }
 
+func buildHandledFields(sequenceConfig api.FeatureViewSeqConfig) map[string]bool {
+	fields := map[string]bool{
+		sequenceConfig.ItemIdField:    true,
+		sequenceConfig.TimestampField: true,
+		sequenceConfig.EventField:     true,
+		"ts":                          true,
+	}
+	if sequenceConfig.PlayTimeField != "" {
+		fields[sequenceConfig.PlayTimeField] = true
+	}
+	if sequenceConfig.CustomDeduplicationField != "" {
+		fields[sequenceConfig.CustomDeduplicationField] = true
+	}
+	return fields
+}
+
 func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *api.SeqConfig, sequenceConfig api.FeatureViewSeqConfig, currTime int64) map[string]interface{} {
 	//produce seqeunce feature correspond to easyrec processor
+	handledFields := buildHandledFields(sequenceConfig)
 	sequencesValueMap := make(map[string][]string)
 
 	for _, seq := range sequencesInfos {
@@ -176,6 +193,9 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 		}
 		sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
 		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
+			if handledFields[behaviorField] {
+				continue
+			}
 			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], seq.onlineBehaviourTableFieldsMap[behaviorField])
 		}
 
@@ -233,6 +253,8 @@ func makeSequenceFeatures4DlrmHSTU(sequencesInfos []*sequenceInfo, seqConfig *ap
 		}
 	}
 
+	handledFields := buildHandledFields(sequenceConfig)
+
 	sequencesValueMap := make(map[string][]string)
 	for _, key := range orderedKeys {
 		agg := aggregateMap[key]
@@ -247,6 +269,9 @@ func makeSequenceFeatures4DlrmHSTU(sequencesInfos []*sequenceInfo, seqConfig *ap
 			sequencesValueMap[sequenceConfig.CustomDeduplicationField] = append(sequencesValueMap[sequenceConfig.CustomDeduplicationField], agg.customFieldValue)
 		}
 		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
+			if handledFields[behaviorField] {
+				continue
+			}
 			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], agg.latestBehaviorFields[behaviorField])
 		}
 	}
