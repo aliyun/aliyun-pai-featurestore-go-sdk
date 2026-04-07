@@ -230,6 +230,14 @@ func (f *BaseFeatureView) GetBehaviorFeaturesWithContext(ctx context.Context, us
 	return nil, errors.New("only sequence feature view supports GetBehaviorFeatures")
 }
 
+func (f *BaseFeatureView) GetOnlineFeaturesForDlrmHSTU(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeatures(joinIds, features, alias)
+}
+
+func (f *BaseFeatureView) GetOnlineFeaturesForDlrmHSTUWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeaturesWithContext(ctx, joinIds, features, alias)
+}
+
 func (f *BaseFeatureView) GetName() string {
 	return f.Name
 }

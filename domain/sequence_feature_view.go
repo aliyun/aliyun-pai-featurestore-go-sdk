@@ -92,7 +92,13 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 				panic("deduplication_method invalid")
 			}
 		}
-		sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 1
+		// Method 3: 3-field + custom field
+		if sequenceFeatureView.sequenceConfig.CustomDeduplicationField != "" {
+			sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 3
+		} else {
+			// Method 1: 3-field only
+			sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 1
+		}
 	} else if len(sequenceFeatureView.sequenceConfig.DeduplicationMethod) == len(requiredElements2) {
 		for i, v := range sequenceFeatureView.sequenceConfig.DeduplicationMethod {
 			if v != requiredElements2[i] {
@@ -221,6 +227,10 @@ func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, 
 }
 
 func (f *SequenceFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	return f.getOnlineFeaturesInternal(ctx, joinIds, features, alias, false)
+}
+
+func (f *SequenceFeatureView) getOnlineFeaturesInternal(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, dlrmHSTU bool) ([]map[string]interface{}, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -229,6 +239,10 @@ func (f *SequenceFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
 	}
 	sequenceConfig := f.sequenceConfig
+	// DlrmHSTU aggregation requires deduplication method 3; fallback to normal query otherwise
+	if dlrmHSTU && sequenceConfig.DeduplicationMethodNum == 3 {
+		sequenceConfig.DlrmHSTU = true
+	}
 	onlineConfig := []*api.SeqConfig{}
 	seenFields := make(map[string]bool)
 
@@ -310,6 +324,20 @@ func (f *SequenceFeatureView) GetOnlineAggregatedFeaturesWithContext(ctx context
 	sequenceFeatureResults, err := f.featureViewDao.GetUserAggregatedSequenceFeatureWithContext(ctx, joinIds, f.userIdField, sequenceConfig, onlineConfig)
 
 	return sequenceFeatureResults, err
+}
+
+// GetOnlineFeaturesForDlrmHSTU returns aggregated sequence features for DlrmHSTU model.
+// It aggregates records by item_id + custom_deduplication_field:
+// - events are joined with "|"
+// - timestamp takes the maximum value
+// - other behavior fields take the value from the record with max timestamp
+// Only works when DeduplicationMethodNum == 3, otherwise falls back to GetOnlineFeatures.
+func (f *SequenceFeatureView) GetOnlineFeaturesForDlrmHSTU(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeaturesForDlrmHSTUWithContext(context.Background(), joinIds, features, alias)
+}
+
+func (f *SequenceFeatureView) GetOnlineFeaturesForDlrmHSTUWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
+	return f.getOnlineFeaturesInternal(ctx, joinIds, features, alias, true)
 }
 
 func (f *SequenceFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {

@@ -703,6 +703,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 					continue
 				}
 				var itemId string
+				var customFieldValue string
 				if sequenceConfig.DeduplicationMethodNum == 1 {
 					itemId = string(kkv.Sk())
 				} else if sequenceConfig.DeduplicationMethodNum == 2 {
@@ -712,6 +713,15 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 						continue
 					}
 					itemId = itemIdTimestamp[0]
+				} else if sequenceConfig.DeduplicationMethodNum == 3 {
+					sk := string(kkv.Sk())
+					itemIdCustomField := strings.Split(sk, "\u001D")
+					if len(itemIdCustomField) != 2 {
+						continue
+					}
+					itemId = itemIdCustomField[0]
+					customFieldValue = itemIdCustomField[1]
+					fmt.Println("field value ", sk)
 				} else {
 					continue
 				}
@@ -719,6 +729,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 				seq := new(sequenceInfo)
 				seq.event = userIdEvent[1]
 				seq.itemId = itemId
+				seq.customFieldValue = customFieldValue
 				seq.timestamp = kkv.EventTimestamp()
 				seq.playTime = kkv.PlayTime()
 
@@ -836,7 +847,13 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 							truncatedSequences = onlineSequences[:seqConfig.SeqLen]
 						}
 
-						subproperties := makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
+						// Choose aggregation function based on DlrmHSTU mode
+						var subproperties map[string]interface{}
+						if sequenceConfig.DlrmHSTU {
+							subproperties = makeSequenceFeatures4DlrmHSTU(truncatedSequences, seqConfig, sequenceConfig, currTime)
+						} else {
+							subproperties = makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
+						}
 						mu.Lock()
 						for k, value := range subproperties {
 							properties[k] = value
@@ -1002,6 +1019,13 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ct
 						continue
 					}
 					itemId = itemIdTimestamp[0]
+				} else if sequenceConfig.DeduplicationMethodNum == 3 {
+					sk := string(kkv.Sk())
+					itemIdCustomField := strings.Split(sk, "\u001D")
+					if len(itemIdCustomField) != 2 {
+						continue
+					}
+					itemId = itemIdCustomField[0]
 				} else {
 					continue
 				}

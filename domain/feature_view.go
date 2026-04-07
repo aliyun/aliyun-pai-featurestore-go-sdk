@@ -16,6 +16,8 @@ type FeatureView interface {
 	GetOnlineAggregatedFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error)
 	GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error)
 	GetBehaviorFeaturesWithContext(ctx context.Context, userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error)
+	GetOnlineFeaturesForDlrmHSTU(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error)
+	GetOnlineFeaturesForDlrmHSTUWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error)
 	GetName() string
 	GetFeatureEntityName() string
 	GetType() string
