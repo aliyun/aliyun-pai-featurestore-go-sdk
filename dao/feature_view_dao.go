@@ -173,9 +173,6 @@ func buildHandledFields(sequenceConfig api.FeatureViewSeqConfig) map[string]bool
 	if sequenceConfig.PlayTimeField != "" {
 		fields[sequenceConfig.PlayTimeField] = true
 	}
-	if sequenceConfig.CustomDeduplicationField != "" {
-		fields[sequenceConfig.CustomDeduplicationField] = true
-	}
 	return fields
 }
 
@@ -254,6 +251,9 @@ func makeSequenceFeatures4DlrmHSTU(sequencesInfos []*sequenceInfo, seqConfig *ap
 	}
 
 	handledFields := buildHandledFields(sequenceConfig)
+	if sequenceConfig.CustomDeduplicationField != "" {
+		handledFields[sequenceConfig.CustomDeduplicationField] = true
+	}
 
 	sequencesValueMap := make(map[string][]string)
 	for _, key := range orderedKeys {
