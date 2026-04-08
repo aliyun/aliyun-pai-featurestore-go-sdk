@@ -721,7 +721,6 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 					}
 					itemId = itemIdCustomField[0]
 					customFieldValue = itemIdCustomField[1]
-					fmt.Println("field value ", sk)
 				} else {
 					continue
 				}

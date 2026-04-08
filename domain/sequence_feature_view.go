@@ -215,22 +215,26 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 }
 
 func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.GetOnlineFeaturesWithContext(context.Background(), joinIds, features, alias)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
 }
 
 func (f *SequenceFeatureView) GetOnlineFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, 1)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
 }
 
 func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesWithCountWithContext(context.Background(), joinIds, features, alias, count)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
 }
 
 func (f *SequenceFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesInternal(ctx, joinIds, features, alias, false)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
 }
 
-func (f *SequenceFeatureView) getOnlineFeaturesInternal(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, dlrmHSTU bool) ([]map[string]interface{}, error) {
+func (f *SequenceFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -239,8 +243,7 @@ func (f *SequenceFeatureView) getOnlineFeaturesInternal(ctx context.Context, joi
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
 	}
 	sequenceConfig := f.sequenceConfig
-	// DlrmHSTU aggregation requires deduplication method 3; fallback to normal query otherwise
-	if dlrmHSTU && sequenceConfig.DeduplicationMethodNum == 3 {
+	if opts.DlrmHSTU && sequenceConfig.DeduplicationMethodNum == 3 {
 		sequenceConfig.DlrmHSTU = true
 	}
 	onlineConfig := []*api.SeqConfig{}
@@ -324,20 +327,6 @@ func (f *SequenceFeatureView) GetOnlineAggregatedFeaturesWithContext(ctx context
 	sequenceFeatureResults, err := f.featureViewDao.GetUserAggregatedSequenceFeatureWithContext(ctx, joinIds, f.userIdField, sequenceConfig, onlineConfig)
 
 	return sequenceFeatureResults, err
-}
-
-// GetOnlineFeaturesForDlrmHSTU returns aggregated sequence features for DlrmHSTU model.
-// It aggregates records by item_id + custom_deduplication_field:
-// - events are joined with "|"
-// - timestamp takes the maximum value
-// - other behavior fields take the value from the record with max timestamp
-// Only works when DeduplicationMethodNum == 3, otherwise falls back to GetOnlineFeatures.
-func (f *SequenceFeatureView) GetOnlineFeaturesForDlrmHSTU(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.GetOnlineFeaturesForDlrmHSTUWithContext(context.Background(), joinIds, features, alias)
-}
-
-func (f *SequenceFeatureView) GetOnlineFeaturesForDlrmHSTUWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesInternal(ctx, joinIds, features, alias, true)
 }
 
 func (f *SequenceFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {

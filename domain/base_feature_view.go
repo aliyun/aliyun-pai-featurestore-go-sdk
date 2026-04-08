@@ -133,15 +133,23 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 }
 
 func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.GetOnlineFeaturesWithContext(context.Background(), joinIds, features, alias)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
 }
 
 func (f *BaseFeatureView) GetOnlineFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, 1)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
 }
 
 func (f *BaseFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
 	return f.getOnlineFeaturesWithCountWithContext(context.Background(), joinIds, features, alias, count)
+}
+
+func (f *BaseFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, 1)
 }
 
 func (f *BaseFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
@@ -228,14 +236,6 @@ func (f *BaseFeatureView) GetBehaviorFeatures(userIds []interface{}, events []in
 
 func (f *BaseFeatureView) GetBehaviorFeaturesWithContext(ctx context.Context, userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
 	return nil, errors.New("only sequence feature view supports GetBehaviorFeatures")
-}
-
-func (f *BaseFeatureView) GetOnlineFeaturesForDlrmHSTU(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.GetOnlineFeatures(joinIds, features, alias)
-}
-
-func (f *BaseFeatureView) GetOnlineFeaturesForDlrmHSTUWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.GetOnlineFeaturesWithContext(ctx, joinIds, features, alias)
 }
 
 func (f *BaseFeatureView) GetName() string {

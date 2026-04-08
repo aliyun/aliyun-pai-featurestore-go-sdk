@@ -90,22 +90,18 @@ func NewModel(model *api.Model, p *Project, lt *LabelTable) *Model {
 }
 
 func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[string]interface{}, error) {
-	return m.GetOnlineFeaturesWithContext(context.Background(), joinIds)
+	return m.GetOnlineFeaturesWithOptions(joinIds, ModelOptions{})
 }
 
 func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[string][]interface{}) ([]map[string]interface{}, error) {
-	return m.getOnlineFeaturesInternal(ctx, joinIds, false)
+	return m.GetOnlineFeaturesWithOptions(joinIds, ModelOptions{Ctx: ctx})
 }
 
-func (m *Model) GetOnlineFeaturesForDlrmHSTU(joinIds map[string][]interface{}) ([]map[string]interface{}, error) {
-	return m.GetOnlineFeaturesForDlrmHSTUWithContext(context.Background(), joinIds)
-}
-
-func (m *Model) GetOnlineFeaturesForDlrmHSTUWithContext(ctx context.Context, joinIds map[string][]interface{}) ([]map[string]interface{}, error) {
-	return m.getOnlineFeaturesInternal(ctx, joinIds, true)
-}
-
-func (m *Model) getOnlineFeaturesInternal(ctx context.Context, joinIds map[string][]interface{}, dlrmHSTU bool) ([]map[string]interface{}, error) {
+func (m *Model) GetOnlineFeaturesWithOptions(joinIds map[string][]interface{}, opts ModelOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -143,8 +139,8 @@ func (m *Model) getOnlineFeaturesInternal(ctx context.Context, joinIds map[strin
 				defer wg.Done()
 				var features []map[string]interface{}
 				var err error
-				if dlrmHSTU {
-					features, err = featureView.GetOnlineFeaturesForDlrmHSTUWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+				if opts.DlrmHSTU {
+					features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: true})
 				} else {
 					features, err = featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 				}
@@ -205,8 +201,8 @@ func (m *Model) getOnlineFeaturesInternal(ctx context.Context, joinIds map[strin
 						defer childWg.Done()
 						var features []map[string]interface{}
 						var err error
-						if dlrmHSTU {
-							features, err = featureView.GetOnlineFeaturesForDlrmHSTUWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+						if opts.DlrmHSTU {
+							features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: true})
 						} else {
 							features, err = featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 						}
@@ -309,10 +305,18 @@ func (m *Model) getOnlineFeaturesInternal(ctx context.Context, joinIds map[strin
 }
 
 func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, featureEntityName string) ([]map[string]interface{}, error) {
-	return m.GetOnlineFeaturesWithEntityWithContext(context.Background(), joinIds, featureEntityName)
+	return m.GetOnlineFeaturesWithEntityWithOptions(joinIds, featureEntityName, ModelOptions{})
 }
 
 func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, joinIds map[string][]interface{}, featureEntityName string) ([]map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithEntityWithOptions(joinIds, featureEntityName, ModelOptions{Ctx: ctx})
+}
+
+func (m *Model) GetOnlineFeaturesWithEntityWithOptions(joinIds map[string][]interface{}, featureEntityName string, opts ModelOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -342,7 +346,13 @@ func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, join
 		wg.Add(1)
 		go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 			defer wg.Done()
-			features, err := featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+			var features []map[string]interface{}
+			var err error
+			if opts.DlrmHSTU {
+				features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: true})
+			} else {
+				features, err = featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+			}
 			if err != nil {
 				errOnce.Do(func() { firstErr = err })
 				return
@@ -418,7 +428,13 @@ func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, join
 						childWg.Add(1)
 						go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 							defer childWg.Done()
-							features, err := featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+							var features []map[string]interface{}
+							var err error
+							if opts.DlrmHSTU {
+								features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: true})
+							} else {
+								features, err = featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+							}
 							if err != nil {
 								childErrOnce.Do(func() { childFirstErr = err })
 								return
