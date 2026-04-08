@@ -139,11 +139,7 @@ func (m *Model) GetOnlineFeaturesWithOptions(joinIds map[string][]interface{}, o
 				defer wg.Done()
 				var features []map[string]interface{}
 				var err error
-				if opts.DlrmHSTU {
-					features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: true})
-				} else {
-					features, err = featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
-				}
+				features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, count: featureViewCount})
 				if err != nil {
 					errOnce.Do(func() { firstErr = err })
 					return
@@ -201,11 +197,7 @@ func (m *Model) GetOnlineFeaturesWithOptions(joinIds map[string][]interface{}, o
 						defer childWg.Done()
 						var features []map[string]interface{}
 						var err error
-						if opts.DlrmHSTU {
-							features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: true})
-						} else {
-							features, err = featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
-						}
+						features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, count: featureViewCount})
 						if err != nil {
 							childErrOnce.Do(func() { childFirstErr = err })
 							return
@@ -348,11 +340,7 @@ func (m *Model) GetOnlineFeaturesWithEntityWithOptions(joinIds map[string][]inte
 			defer wg.Done()
 			var features []map[string]interface{}
 			var err error
-			if opts.DlrmHSTU {
-				features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: true})
-			} else {
-				features, err = featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
-			}
+			features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, count: featureViewCount})
 			if err != nil {
 				errOnce.Do(func() { firstErr = err })
 				return
@@ -430,11 +418,7 @@ func (m *Model) GetOnlineFeaturesWithEntityWithOptions(joinIds map[string][]inte
 							defer childWg.Done()
 							var features []map[string]interface{}
 							var err error
-							if opts.DlrmHSTU {
-								features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: true})
-							} else {
-								features, err = featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
-							}
+							features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, count: featureViewCount})
 							if err != nil {
 								childErrOnce.Do(func() { childFirstErr = err })
 								return

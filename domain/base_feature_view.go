@@ -149,7 +149,11 @@ func (f *BaseFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}, fe
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, 1)
+	count := opts.count
+	if count <= 0 {
+		count = 1
+	}
+	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, count)
 }
 
 func (f *BaseFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
