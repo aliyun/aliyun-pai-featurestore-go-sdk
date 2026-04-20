@@ -581,6 +581,7 @@ type FeatureDBBatchGetKKVRequest struct {
 	PKs       []string `json:"pks"`
 	Length    int      `json:"length"`
 	WithValue bool     `json:"with_value"`
+	SkipMerge bool     `json:"skip_merge"`
 }
 
 func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
@@ -625,6 +626,9 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 			PKs:       pks,
 			Length:    seqLen,
 			WithValue: withValue,
+		}
+		if sequenceConfig.DlrmHSTU {
+			request.SkipMerge = true
 		}
 		body, _ := json.Marshal(request)
 		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
@@ -931,6 +935,9 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ct
 			PKs:       pks,
 			Length:    seqLen,
 			WithValue: withValue,
+		}
+		if sequenceConfig.DlrmHSTU {
+			request.SkipMerge = true
 		}
 		body, _ := json.Marshal(request)
 		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
