@@ -214,7 +214,7 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 // - joins events with "|"
 // - takes max timestamp
 // - takes behavior field values from the record with max timestamp
-func makeSequenceFeatures4DlrmHSTU(sequencesInfos []*sequenceInfo, seqConfig *api.SeqConfig, sequenceConfig api.FeatureViewSeqConfig, currTime int64) map[string]interface{} {
+func makeSequenceFeatures4DlrmHSTU(sequencesInfos []*sequenceInfo, seqConfig *api.SeqConfig, sequenceConfig api.FeatureViewSeqConfig, currTime int64, seqLen int) map[string]interface{} {
 	type aggregatedRecord struct {
 		itemId               string
 		customFieldValue     string
@@ -248,6 +248,11 @@ func makeSequenceFeatures4DlrmHSTU(sequencesInfos []*sequenceInfo, seqConfig *ap
 			}
 			orderedKeys = append(orderedKeys, key)
 		}
+	}
+
+	// Truncate to seqLen after aggregation
+	if seqLen > 0 && len(orderedKeys) > seqLen {
+		orderedKeys = orderedKeys[:seqLen]
 	}
 
 	handledFields := buildHandledFields(sequenceConfig)

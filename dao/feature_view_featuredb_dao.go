@@ -853,7 +853,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 						// Choose aggregation function based on DlrmHSTU mode
 						var subproperties map[string]interface{}
 						if sequenceConfig.DlrmHSTU {
-							subproperties = makeSequenceFeatures4DlrmHSTU(truncatedSequences, seqConfig, sequenceConfig, currTime)
+							subproperties = makeSequenceFeatures4DlrmHSTU(truncatedSequences, seqConfig, sequenceConfig, currTime, seqConfig.SeqLen)
 						} else {
 							subproperties = makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
 						}
