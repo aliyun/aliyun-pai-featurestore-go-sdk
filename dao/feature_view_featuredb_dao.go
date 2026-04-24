@@ -843,18 +843,18 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 					onlineSequences := fetchDataFunc(seqEvent, maxLen, key, seqConfigsBehaviorFields)
 
 					for _, seqConfig := range seqConfigs {
-						var truncatedSequences []*sequenceInfo
-						if seqConfig.SeqLen >= len(onlineSequences) {
-							truncatedSequences = onlineSequences
-						} else {
-							truncatedSequences = onlineSequences[:seqConfig.SeqLen]
-						}
-
 						// Choose aggregation function based on DlrmHSTU mode
 						var subproperties map[string]interface{}
 						if sequenceConfig.DlrmHSTU {
-							subproperties = makeSequenceFeatures4DlrmHSTU(truncatedSequences, seqConfig, sequenceConfig, currTime, seqConfig.SeqLen)
+							// DlrmHSTU: pass all raw sequences, truncate after aggregation
+							subproperties = makeSequenceFeatures4DlrmHSTU(onlineSequences, seqConfig, sequenceConfig, currTime, seqConfig.SeqLen)
 						} else {
+							var truncatedSequences []*sequenceInfo
+							if seqConfig.SeqLen >= len(onlineSequences) {
+								truncatedSequences = onlineSequences
+							} else {
+								truncatedSequences = onlineSequences[:seqConfig.SeqLen]
+							}
 							subproperties = makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
 						}
 						mu.Lock()
