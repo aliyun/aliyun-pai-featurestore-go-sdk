@@ -1,1 +1,5 @@
 featurestore/__debug_bin
+main*
+output.txt
+.DS_Store
+.qoder/

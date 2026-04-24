@@ -92,7 +92,13 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 				panic("deduplication_method invalid")
 			}
 		}
-		sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 1
+		// Method 3: 3-field + custom field
+		if sequenceFeatureView.sequenceConfig.CustomDeduplicationField != "" {
+			sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 3
+		} else {
+			// Method 1: 3-field only
+			sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 1
+		}
 	} else if len(sequenceFeatureView.sequenceConfig.DeduplicationMethod) == len(requiredElements2) {
 		for i, v := range sequenceFeatureView.sequenceConfig.DeduplicationMethod {
 			if v != requiredElements2[i] {
@@ -209,18 +215,26 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 }
 
 func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.GetOnlineFeaturesWithContext(context.Background(), joinIds, features, alias)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
 }
 
 func (f *SequenceFeatureView) GetOnlineFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, 1)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
 }
 
 func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesWithCountWithContext(context.Background(), joinIds, features, alias, count)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
 }
 
 func (f *SequenceFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
+}
+
+func (f *SequenceFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -229,6 +243,9 @@ func (f *SequenceFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
 	}
 	sequenceConfig := f.sequenceConfig
+	if opts.DlrmHSTU && sequenceConfig.DeduplicationMethodNum == 3 {
+		sequenceConfig.DlrmHSTU = true
+	}
 	onlineConfig := []*api.SeqConfig{}
 	seenFields := make(map[string]bool)
 

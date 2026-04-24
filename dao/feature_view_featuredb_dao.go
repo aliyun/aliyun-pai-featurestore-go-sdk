@@ -581,6 +581,7 @@ type FeatureDBBatchGetKKVRequest struct {
 	PKs       []string `json:"pks"`
 	Length    int      `json:"length"`
 	WithValue bool     `json:"with_value"`
+	SkipMerge bool     `json:"skip_merge"`
 }
 
 func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
@@ -625,6 +626,9 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 			PKs:       pks,
 			Length:    seqLen,
 			WithValue: withValue,
+		}
+		if sequenceConfig.DlrmHSTU {
+			request.SkipMerge = true
 		}
 		body, _ := json.Marshal(request)
 		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
@@ -703,6 +707,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 					continue
 				}
 				var itemId string
+				var customFieldValue string
 				if sequenceConfig.DeduplicationMethodNum == 1 {
 					itemId = string(kkv.Sk())
 				} else if sequenceConfig.DeduplicationMethodNum == 2 {
@@ -712,6 +717,14 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 						continue
 					}
 					itemId = itemIdTimestamp[0]
+				} else if sequenceConfig.DeduplicationMethodNum == 3 {
+					sk := string(kkv.Sk())
+					itemIdCustomField := strings.Split(sk, "\u001D")
+					if len(itemIdCustomField) != 2 {
+						continue
+					}
+					itemId = itemIdCustomField[0]
+					customFieldValue = itemIdCustomField[1]
 				} else {
 					continue
 				}
@@ -719,6 +732,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 				seq := new(sequenceInfo)
 				seq.event = userIdEvent[1]
 				seq.itemId = itemId
+				seq.customFieldValue = customFieldValue
 				seq.timestamp = kkv.EventTimestamp()
 				seq.playTime = kkv.PlayTime()
 
@@ -829,14 +843,20 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 					onlineSequences := fetchDataFunc(seqEvent, maxLen, key, seqConfigsBehaviorFields)
 
 					for _, seqConfig := range seqConfigs {
-						var truncatedSequences []*sequenceInfo
-						if seqConfig.SeqLen >= len(onlineSequences) {
-							truncatedSequences = onlineSequences
+						// Choose aggregation function based on DlrmHSTU mode
+						var subproperties map[string]interface{}
+						if sequenceConfig.DlrmHSTU {
+							// DlrmHSTU: pass all raw sequences, truncate after aggregation
+							subproperties = makeSequenceFeatures4DlrmHSTU(onlineSequences, seqConfig, sequenceConfig, currTime, seqConfig.SeqLen)
 						} else {
-							truncatedSequences = onlineSequences[:seqConfig.SeqLen]
+							var truncatedSequences []*sequenceInfo
+							if seqConfig.SeqLen >= len(onlineSequences) {
+								truncatedSequences = onlineSequences
+							} else {
+								truncatedSequences = onlineSequences[:seqConfig.SeqLen]
+							}
+							subproperties = makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
 						}
-
-						subproperties := makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
 						mu.Lock()
 						for k, value := range subproperties {
 							properties[k] = value
@@ -915,6 +935,9 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ct
 			PKs:       pks,
 			Length:    seqLen,
 			WithValue: withValue,
+		}
+		if sequenceConfig.DlrmHSTU {
+			request.SkipMerge = true
 		}
 		body, _ := json.Marshal(request)
 		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
@@ -1002,6 +1025,13 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ct
 						continue
 					}
 					itemId = itemIdTimestamp[0]
+				} else if sequenceConfig.DeduplicationMethodNum == 3 {
+					sk := string(kkv.Sk())
+					itemIdCustomField := strings.Split(sk, "\u001D")
+					if len(itemIdCustomField) != 2 {
+						continue
+					}
+					itemId = itemIdCustomField[0]
 				} else {
 					continue
 				}

@@ -133,15 +133,27 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 }
 
 func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.GetOnlineFeaturesWithContext(context.Background(), joinIds, features, alias)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
 }
 
 func (f *BaseFeatureView) GetOnlineFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, 1)
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
 }
 
 func (f *BaseFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
 	return f.getOnlineFeaturesWithCountWithContext(context.Background(), joinIds, features, alias, count)
+}
+
+func (f *BaseFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	count := opts.count
+	if count <= 0 {
+		count = 1
+	}
+	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, count)
 }
 
 func (f *BaseFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
