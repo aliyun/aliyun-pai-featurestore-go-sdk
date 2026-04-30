@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -59,9 +61,23 @@ func (m *Hologres) Init() error {
 		return err
 	}
 
+	maxIdleConns := 100
+	maxOpenConns := 100
+	if v := os.Getenv("HOLOGRES_MAX_IDLE_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxIdleConns = n
+		}
+	}
+	if v := os.Getenv("HOLOGRES_MAX_OPEN_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxOpenConns = n
+		}
+	}
+
 	db.SetConnMaxLifetime(60 * time.Minute)
-	db.SetMaxIdleConns(50)
-	db.SetMaxOpenConns(100)
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetMaxOpenConns(maxOpenConns)
+	fmt.Printf("hologres connection pool config, name=%s, maxIdleConns=%d, maxOpenConns=%d\n", m.Name, maxIdleConns, maxOpenConns)
 
 	m.DB = db
 	err = m.DB.Ping()
