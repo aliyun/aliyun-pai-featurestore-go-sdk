@@ -274,11 +274,11 @@ func TestExpr(t *testing.T) {
 	}{
 		{
 			code:   "metric_value > 6",
-			expect: "metric_value > '6'",
+			expect: "metric_value > 6",
 		},
 		{
 			code:   "6 < metric_value ",
-			expect: "'6' < metric_value",
+			expect: "6 < metric_value",
 		},
 		{
 			code:   "sex == 'male'",
@@ -286,19 +286,68 @@ func TestExpr(t *testing.T) {
 		},
 		{
 			code:   "metric_value > 6 && sex == 'male'",
-			expect: "(metric_value > '6') and (sex = 'male')",
+			expect: "(metric_value > 6) and (sex = 'male')",
 		},
 		{
 			code:   "metric_value > 6 && sex == 'male' || os != 'ALL'",
-			expect: "((metric_value > '6') and (sex = 'male')) or (os != 'ALL')",
+			expect: "((metric_value > 6) and (sex = 'male')) or (os != 'ALL')",
 		},
 		{
 			code:   "(metric_value > 6 && sex == 'male') || (os != 'ALL')",
-			expect: "((metric_value > '6') and (sex = 'male')) or (os != 'ALL')",
+			expect: "((metric_value > 6) and (sex = 'male')) or (os != 'ALL')",
 		},
 		{
 			code:   "(age < 30 && (3 <= level < 5) && sex=='male')",
-			expect: "((age < '30') and (('3' <= level) and (level < '5'))) and (sex = 'male')",
+			expect: "((age < 30) and ((3 <= level) and (level < 5))) and (sex = 'male')",
+		},
+		{
+			code:   "sex in ['male', 'female']",
+			expect: "sex in ('female', 'male')",
+		},
+		{
+			code:   "city in ['北京市', '上海市', '广州市']",
+			expect: "city in ('上海市', '北京市', '广州市')",
+		},
+		{
+			code:   "level in [1, 2, 3]",
+			expect: "level in (1, 2, 3)",
+		},
+		{
+			code:   "sex not in ['male', 'female']",
+			expect: "sex not in ('female', 'male')",
+		},
+		{
+			code:   "age > 18 && sex in ['male', 'female']",
+			expect: "(age > 18) and (sex in ('female', 'male'))",
+		},
+		{
+			code:   "(level in [1, 2, 3]) || (sex == 'male')",
+			expect: "(level in (1, 2, 3)) or (sex = 'male')",
+		},
+		{
+			code:   "name == \"O'Brien\"",
+			expect: "name = 'O''Brien'",
+		},
+		
+		{
+			code:   "city in [\"St. John's\", 'London']",
+			expect: "city in ('London', 'St. John''s')",
+		},
+		{
+			code:   "name in [\"O'Brien\", 'Smith']",
+			expect: "name in ('O''Brien', 'Smith')",
+		},
+		{
+			code:   "name in ['O\\'Brien', 'Smith']",
+			expect: "name in ('O''Brien', 'Smith')",
+		},
+		{
+			code:   "id in [1, 2, 3]",
+			expect: "id in (1, 2, 3)",
+		},
+		{
+			code:   "name not in [\"a';DROP TABLE users--\"]",
+			expect: "name not in ('a'';DROP TABLE users--')",
 		},
 	}
 	for _, tcase := range testcases {

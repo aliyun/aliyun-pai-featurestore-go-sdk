@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -504,40 +505,150 @@ func (d *FeatureViewHologresDao) GetUserBehaviorFeatureWithContext(ctx context.C
 }
 
 type Visitor struct {
-	LastNode *ast.BinaryNode
+	LastNode ast.Node
 }
 
 func (v *Visitor) Visit(node *ast.Node) {
-	switch n := (*node).(type) {
-	case *ast.BinaryNode:
-		v.LastNode = n
-	}
+	v.LastNode = *node
 }
-func (v *Visitor) ConvertToSql(node *ast.BinaryNode) string {
+func (v *Visitor) ConvertToSql(node ast.Node) string {
 	if node == nil {
 		return ""
 	}
-	if node.Operator != "&&" && node.Operator != "||" {
-		op := node.Operator
+	if unaryNode, ok := node.(*ast.UnaryNode); ok {
+		if unaryNode.Operator == "not" {
+			inner, ok := unaryNode.Node.(*ast.BinaryNode)
+			if ok && inner.Operator == "in" {
+				return v.convertInToSql(inner, true)
+			}
+			innerSql := v.ConvertToSql(unaryNode.Node)
+			if innerSql == "" {
+				return ""
+			}
+			return fmt.Sprintf("not (%s)", innerSql)
+		}
+		return ""
+	}
+	binaryNode, ok := node.(*ast.BinaryNode)
+	if !ok {
+		return ""
+	}
+	if binaryNode.Operator == "in" {
+		return v.convertInToSql(binaryNode, false)
+	}
+	if binaryNode.Operator != "&&" && binaryNode.Operator != "||" {
+		op := binaryNode.Operator
 		if op == "==" {
 			op = "="
 		}
-		if leftNode, ok := node.Left.(*ast.IdentifierNode); ok {
-			return fmt.Sprintf("%s %s '%s'", leftNode, op, strings.ReplaceAll(node.Right.String(), "\"", ""))
+		if leftNode, ok := binaryNode.Left.(*ast.IdentifierNode); ok {
+			return fmt.Sprintf("%s %s %s", leftNode, op, sqlLiteral(binaryNode.Right))
 		} else {
-			return fmt.Sprintf("'%s' %s %s", strings.ReplaceAll(node.Left.String(), "\"", ""), op, node.Right.String())
+			return fmt.Sprintf("%s %s %s", sqlLiteral(binaryNode.Left), op, binaryNode.Right)
 		}
 
-	} else if node.Operator == "&&" {
-		left := v.ConvertToSql(node.Left.(*ast.BinaryNode))
-		right := v.ConvertToSql(node.Right.(*ast.BinaryNode))
+	} else if binaryNode.Operator == "&&" {
+		left := v.ConvertToSql(binaryNode.Left)
+		right := v.ConvertToSql(binaryNode.Right)
 		return fmt.Sprintf("(%s) and (%s)", left, right)
-	} else if node.Operator == "||" {
-		left := v.ConvertToSql(node.Left.(*ast.BinaryNode))
-		right := v.ConvertToSql(node.Right.(*ast.BinaryNode))
+	} else if binaryNode.Operator == "||" {
+		left := v.ConvertToSql(binaryNode.Left)
+		right := v.ConvertToSql(binaryNode.Right)
 		return fmt.Sprintf("(%s) or (%s)", left, right)
 	}
 	return ""
+}
+
+// quoteSQLString 将字符串值转义单引号并包裹单引号，生成合法 SQL 字面量
+func quoteSQLString(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// sqlLiteral 根据 AST 节点类型返回对应的 SQL 字面量（数值不加引号，字符串加引号并转义）
+func sqlLiteral(node ast.Node) string {
+	switch n := node.(type) {
+	case *ast.IntegerNode:
+		return fmt.Sprintf("%d", n.Value)
+	case *ast.FloatNode:
+		return fmt.Sprintf("%g", n.Value)
+	case *ast.BoolNode:
+		return fmt.Sprintf("%t", n.Value)
+	case *ast.StringNode:
+		return quoteSQLString(n.Value)
+	case *ast.ConstantNode:
+		switch v := n.Value.(type) {
+		case int:
+			return fmt.Sprintf("%d", v)
+		case int64:
+			return fmt.Sprintf("%d", v)
+		case float64:
+			return fmt.Sprintf("%g", v)
+		case bool:
+			return fmt.Sprintf("%t", v)
+		case string:
+			return quoteSQLString(v)
+		default:
+			return quoteSQLString(fmt.Sprintf("%v", v))
+		}
+	default:
+		s := strings.ReplaceAll(node.String(), "\"", "")
+		return quoteSQLString(s)
+	}
+}
+
+func (v *Visitor) convertInToSql(node *ast.BinaryNode, negate bool) string {
+	leftNode, ok := node.Left.(*ast.IdentifierNode)
+	if !ok {
+		return ""
+	}
+	var values []string
+	switch right := node.Right.(type) {
+	case *ast.ArrayNode:
+		for _, elem := range right.Nodes {
+			values = append(values, sqlLiteral(elem))
+		}
+	case *ast.ConstantNode:
+		switch m := right.Value.(type) {
+		case map[string]struct{}:
+			for k := range m {
+				values = append(values, quoteSQLString(k))
+			}
+			sort.Strings(values)
+		case map[int]struct{}:
+			keys := make([]int, 0, len(m))
+			for k := range m {
+				keys = append(keys, k)
+			}
+			sort.Ints(keys)
+			for _, k := range keys {
+				values = append(values, fmt.Sprintf("%d", k))
+			}
+		case []any:
+			for _, val := range m {
+				switch v := val.(type) {
+				case string:
+					values = append(values, quoteSQLString(v))
+				case int:
+					values = append(values, fmt.Sprintf("%d", v))
+				case float64:
+					values = append(values, fmt.Sprintf("%g", v))
+				case bool:
+					values = append(values, fmt.Sprintf("%t", v))
+				default:
+					values = append(values, quoteSQLString(fmt.Sprintf("%v", v)))
+				}
+			}
+		default:
+			return ""
+		}
+	default:
+		return ""
+	}
+	op := "in"
+	if negate {
+		op = "not in"
+	}
+	return fmt.Sprintf("%s %s (%s)", leftNode, op, strings.Join(values, ", "))
 }
 
 func (d *FeatureViewHologresDao) RowCount(filterExpr string) int {

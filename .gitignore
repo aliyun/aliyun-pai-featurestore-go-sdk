@@ -3,3 +3,4 @@ main*
 output.txt
 .DS_Store
 .qoder/
+.idea/
