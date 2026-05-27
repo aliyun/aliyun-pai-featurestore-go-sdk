@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -504,40 +505,98 @@ func (d *FeatureViewHologresDao) GetUserBehaviorFeatureWithContext(ctx context.C
 }
 
 type Visitor struct {
-	LastNode *ast.BinaryNode
+	LastNode ast.Node
 }
 
 func (v *Visitor) Visit(node *ast.Node) {
-	switch n := (*node).(type) {
-	case *ast.BinaryNode:
-		v.LastNode = n
-	}
+	v.LastNode = *node
 }
-func (v *Visitor) ConvertToSql(node *ast.BinaryNode) string {
+func (v *Visitor) ConvertToSql(node ast.Node) string {
 	if node == nil {
 		return ""
 	}
-	if node.Operator != "&&" && node.Operator != "||" {
-		op := node.Operator
+	if unaryNode, ok := node.(*ast.UnaryNode); ok {
+		if unaryNode.Operator == "not" {
+			inner, ok := unaryNode.Node.(*ast.BinaryNode)
+			if ok && inner.Operator == "in" {
+				return v.convertInToSql(inner, true)
+			}
+			innerSql := v.ConvertToSql(unaryNode.Node)
+			if innerSql == "" {
+				return ""
+			}
+			return fmt.Sprintf("not (%s)", innerSql)
+		}
+		return ""
+	}
+	binaryNode, ok := node.(*ast.BinaryNode)
+	if !ok {
+		return ""
+	}
+	if binaryNode.Operator == "in" {
+		return v.convertInToSql(binaryNode, false)
+	}
+	if binaryNode.Operator != "&&" && binaryNode.Operator != "||" {
+		op := binaryNode.Operator
 		if op == "==" {
 			op = "="
 		}
-		if leftNode, ok := node.Left.(*ast.IdentifierNode); ok {
-			return fmt.Sprintf("%s %s '%s'", leftNode, op, strings.ReplaceAll(node.Right.String(), "\"", ""))
+		if leftNode, ok := binaryNode.Left.(*ast.IdentifierNode); ok {
+			return fmt.Sprintf("%s %s '%s'", leftNode, op, strings.ReplaceAll(binaryNode.Right.String(), "\"", ""))
 		} else {
-			return fmt.Sprintf("'%s' %s %s", strings.ReplaceAll(node.Left.String(), "\"", ""), op, node.Right.String())
+			return fmt.Sprintf("'%s' %s %s", strings.ReplaceAll(binaryNode.Left.String(), "\"", ""), op, binaryNode.Right.String())
 		}
 
-	} else if node.Operator == "&&" {
-		left := v.ConvertToSql(node.Left.(*ast.BinaryNode))
-		right := v.ConvertToSql(node.Right.(*ast.BinaryNode))
+	} else if binaryNode.Operator == "&&" {
+		left := v.ConvertToSql(binaryNode.Left)
+		right := v.ConvertToSql(binaryNode.Right)
 		return fmt.Sprintf("(%s) and (%s)", left, right)
-	} else if node.Operator == "||" {
-		left := v.ConvertToSql(node.Left.(*ast.BinaryNode))
-		right := v.ConvertToSql(node.Right.(*ast.BinaryNode))
+	} else if binaryNode.Operator == "||" {
+		left := v.ConvertToSql(binaryNode.Left)
+		right := v.ConvertToSql(binaryNode.Right)
 		return fmt.Sprintf("(%s) or (%s)", left, right)
 	}
 	return ""
+}
+
+func (v *Visitor) convertInToSql(node *ast.BinaryNode, negate bool) string {
+	leftNode, ok := node.Left.(*ast.IdentifierNode)
+	if !ok {
+		return ""
+	}
+	var values []string
+	switch right := node.Right.(type) {
+	case *ast.ArrayNode:
+		for _, elem := range right.Nodes {
+			values = append(values, fmt.Sprintf("'%s'", strings.ReplaceAll(elem.String(), "\"", "")))
+		}
+	case *ast.ConstantNode:
+		switch m := right.Value.(type) {
+		case map[string]struct{}:
+			for k := range m {
+				values = append(values, fmt.Sprintf("'%s'", k))
+			}
+			sort.Strings(values)
+		case map[int]struct{}:
+			for k := range m {
+				values = append(values, fmt.Sprintf("'%d'", k))
+			}
+			sort.Strings(values)
+		case []any:
+			for _, val := range m {
+				values = append(values, fmt.Sprintf("'%v'", val))
+			}
+		default:
+			return ""
+		}
+	default:
+		return ""
+	}
+	op := "in"
+	if negate {
+		op = "not in"
+	}
+	return fmt.Sprintf("%s %s (%s)", leftNode, op, strings.Join(values, ", "))
 }
 
 func (d *FeatureViewHologresDao) RowCount(filterExpr string) int {
