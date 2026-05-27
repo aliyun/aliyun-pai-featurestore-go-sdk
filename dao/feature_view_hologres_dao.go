@@ -542,9 +542,9 @@ func (v *Visitor) ConvertToSql(node ast.Node) string {
 			op = "="
 		}
 		if leftNode, ok := binaryNode.Left.(*ast.IdentifierNode); ok {
-			return fmt.Sprintf("%s %s '%s'", leftNode, op, strings.ReplaceAll(binaryNode.Right.String(), "\"", ""))
+			return fmt.Sprintf("%s %s %s", leftNode, op, sqlLiteral(binaryNode.Right))
 		} else {
-			return fmt.Sprintf("'%s' %s %s", strings.ReplaceAll(binaryNode.Left.String(), "\"", ""), op, binaryNode.Right.String())
+			return fmt.Sprintf("%s %s %s", sqlLiteral(binaryNode.Left), op, binaryNode.Right)
 		}
 
 	} else if binaryNode.Operator == "&&" {
@@ -559,6 +559,43 @@ func (v *Visitor) ConvertToSql(node ast.Node) string {
 	return ""
 }
 
+// quoteSQLString 将字符串值转义单引号并包裹单引号，生成合法 SQL 字面量
+func quoteSQLString(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// sqlLiteral 根据 AST 节点类型返回对应的 SQL 字面量（数值不加引号，字符串加引号并转义）
+func sqlLiteral(node ast.Node) string {
+	switch n := node.(type) {
+	case *ast.IntegerNode:
+		return fmt.Sprintf("%d", n.Value)
+	case *ast.FloatNode:
+		return fmt.Sprintf("%g", n.Value)
+	case *ast.BoolNode:
+		return fmt.Sprintf("%t", n.Value)
+	case *ast.StringNode:
+		return quoteSQLString(n.Value)
+	case *ast.ConstantNode:
+		switch v := n.Value.(type) {
+		case int:
+			return fmt.Sprintf("%d", v)
+		case int64:
+			return fmt.Sprintf("%d", v)
+		case float64:
+			return fmt.Sprintf("%g", v)
+		case bool:
+			return fmt.Sprintf("%t", v)
+		case string:
+			return quoteSQLString(v)
+		default:
+			return quoteSQLString(fmt.Sprintf("%v", v))
+		}
+	default:
+		s := strings.ReplaceAll(node.String(), "\"", "")
+		return quoteSQLString(s)
+	}
+}
+
 func (v *Visitor) convertInToSql(node *ast.BinaryNode, negate bool) string {
 	leftNode, ok := node.Left.(*ast.IdentifierNode)
 	if !ok {
@@ -568,23 +605,38 @@ func (v *Visitor) convertInToSql(node *ast.BinaryNode, negate bool) string {
 	switch right := node.Right.(type) {
 	case *ast.ArrayNode:
 		for _, elem := range right.Nodes {
-			values = append(values, fmt.Sprintf("'%s'", strings.ReplaceAll(elem.String(), "\"", "")))
+			values = append(values, sqlLiteral(elem))
 		}
 	case *ast.ConstantNode:
 		switch m := right.Value.(type) {
 		case map[string]struct{}:
 			for k := range m {
-				values = append(values, fmt.Sprintf("'%s'", k))
+				values = append(values, quoteSQLString(k))
 			}
 			sort.Strings(values)
 		case map[int]struct{}:
+			keys := make([]int, 0, len(m))
 			for k := range m {
-				values = append(values, fmt.Sprintf("'%d'", k))
+				keys = append(keys, k)
 			}
-			sort.Strings(values)
+			sort.Ints(keys)
+			for _, k := range keys {
+				values = append(values, fmt.Sprintf("%d", k))
+			}
 		case []any:
 			for _, val := range m {
-				values = append(values, fmt.Sprintf("'%v'", val))
+				switch v := val.(type) {
+				case string:
+					values = append(values, quoteSQLString(v))
+				case int:
+					values = append(values, fmt.Sprintf("%d", v))
+				case float64:
+					values = append(values, fmt.Sprintf("%g", v))
+				case bool:
+					values = append(values, fmt.Sprintf("%t", v))
+				default:
+					values = append(values, quoteSQLString(fmt.Sprintf("%v", v)))
+				}
 			}
 		default:
 			return ""
