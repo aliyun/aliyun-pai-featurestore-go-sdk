@@ -1442,13 +1442,11 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 
 		body, err := json.Marshal(requestBody)
 		if err != nil {
-			errChan <- err
 			return err
 		}
 
 		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 		if err != nil {
-			errChan <- err
 			return err
 		}
 
@@ -1466,12 +1464,10 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 
 			body, err = json.Marshal(requestBody)
 			if err != nil {
-				errChan <- err
 				return err
 			}
 			req, err = http.NewRequest("POST", url, bytes.NewReader(body))
 			if err != nil {
-				errChan <- err
 				return err
 			}
 			req.Header.Set("Content-Type", "application/json")
@@ -1480,8 +1476,7 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 
 			response, err = d.featureDBClient.Client.Do(req)
 			if err != nil {
-				errChan <- err
-				return nil
+				return err
 			}
 		}
 		defer response.Body.Close()
