@@ -8,6 +8,7 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
 type SequenceFeatureView struct {
@@ -424,7 +425,7 @@ func (f *SequenceFeatureView) WriteFeatures(data []map[string]interface{}) error
 		if !exists || timestampValue == nil {
 			return fmt.Errorf("field '%s' must not be null for record at index %d", timestampField, i)
 		}
-		if timestampValue == 0 {
+		if utils.ToInt64(timestampValue, -1) == 0 {
 			return fmt.Errorf("field '%s' must not be null for record at index %d", timestampField, i)
 		}
 
