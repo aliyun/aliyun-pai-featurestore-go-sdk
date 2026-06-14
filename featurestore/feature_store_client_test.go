@@ -603,12 +603,12 @@ func TestWriteFeaturesToSequenceFeatureViewAsync(t *testing.T) {
 	}
 
 	// get featureview by name
-	featureView := project.GetFeatureView("seq_test60")
+	featureView := project.GetFeatureView("seq_feature_test")
 	if featureView == nil {
 		t.Fatal("feature view not exist")
 	}
 
-	joinIds := []interface{}{int64(185284895), int64(185284896), int64(185284897), int64(185284898), int64(185284899)}
+	joinIds := []interface{}{"185284895", "185284896", "185284897", "185284898", "185284899"}
 
 	recordsPerUser := 10 // 每个用户 10 条记录
 	writeData := make([]map[string]interface{}, 0, len(joinIds)*recordsPerUser)
@@ -626,14 +626,13 @@ func TestWriteFeaturesToSequenceFeatureViewAsync(t *testing.T) {
 			row["user_id"] = joinId
 
 			row["request_id"] = int64(rand.Intn(1000000))
-			row["exp_id"] = fmt.Sprintf("exp_%d", rand.Intn(100))
 			row["page"] = pages[rand.Intn(len(pages))]
 			row["net_type"] = netTypes[rand.Intn(len(netTypes))]
 
 			eventTime := baseTime.Add(time.Duration(i) * time.Minute)
-			row["event_time"] = eventTime.UnixMilli()
+			row["event_unix_time"] = eventTime.UnixMilli()
 
-			row["item_id"] = int64(800000 + rand.Intn(10000))
+			row["item_id"] = fmt.Sprintf("%d", 800000+rand.Intn(10000))
 			row["event"] = events[rand.Intn(len(events))]
 			row["playtime"] = rand.Float64() * 100.0
 
@@ -647,7 +646,7 @@ func TestWriteFeaturesToSequenceFeatureViewAsync(t *testing.T) {
 
 	// 等待数据写入完成（实际场景中应该由业务逻辑控制何时 flush）
 	time.Sleep(3 * time.Second)
-	features, err := featureView.GetOnlineFeatures([]interface{}{185284895, 185284896, 185284897, 185284898, 185284899}, []string{"*"}, nil)
+	features, err := featureView.GetOnlineFeatures(joinIds, []string{"*"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
