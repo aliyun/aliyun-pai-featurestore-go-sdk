@@ -1610,8 +1610,22 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDBDirect(batch []map[string]interf
 		return fmt.Errorf("featuredb write_direct decode response failed: %v, body: %s", err, string(bodyBytes))
 	}
 
-	total := toInt(resp.Data["total_count"])
-	success := toInt(resp.Data["success_count"])
+	// HTTP 200 does not imply business success; the server uses resp.Code to
+	// signal logical errors (e.g. PARAMETER_ERROR, SEVER_ERROR).
+	if resp.Code != "OK" {
+		return fmt.Errorf("featuredb write_direct failed, code: %s, message: %s, request_id: %s",
+			resp.Code, resp.Message, resp.RequestID)
+	}
+	if resp.Data == nil {
+		return fmt.Errorf("featuredb write_direct returned empty data, request_id: %s", resp.RequestID)
+	}
+
+	total, totalOK := toInt(resp.Data["total_count"])
+	success, successOK := toInt(resp.Data["success_count"])
+	if !totalOK || !successOK {
+		return fmt.Errorf("featuredb write_direct returned malformed data (missing total_count/success_count), request_id: %s, data: %v",
+			resp.RequestID, resp.Data)
+	}
 	failKeys := toStringSlice(resp.Data["fail_keys"])
 	errMsgs := toStringSlice(resp.Data["error_messages"])
 
@@ -1638,19 +1652,26 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDBDirect(batch []map[string]interf
 	return nil
 }
 
-func toInt(v interface{}) int {
+// toInt extracts an int from a JSON-decoded value. The second return value
+// distinguishes a missing/unsupported field (false) from a real zero (true),
+// so callers can detect malformed responses instead of silently treating
+// them as success.
+func toInt(v interface{}) (int, bool) {
 	switch x := v.(type) {
 	case float64:
-		return int(x)
+		return int(x), true
 	case int:
-		return x
+		return x, true
 	case int64:
-		return int(x)
+		return int(x), true
 	case json.Number:
-		n, _ := x.Int64()
-		return int(n)
+		n, err := x.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(n), true
 	default:
-		return 0
+		return 0, false
 	}
 }
 
