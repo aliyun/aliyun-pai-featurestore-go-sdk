@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sort"
@@ -19,6 +20,12 @@ type FeatureViewDao interface {
 	GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
 	GetUserAggregatedSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error)
 	GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
+
+	GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error)
+	GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
+	GetUserAggregatedSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error)
+	GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
+
 	RowCount(string) int
 	RowCountIds(string) ([]string, int, error)
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
@@ -30,17 +37,31 @@ type UnimplementedFeatureViewDao struct {
 }
 
 func (d *UnimplementedFeatureViewDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
-	return nil, nil
+	return d.GetFeaturesWithContext(context.Background(), keys, selectFields, weight)
 }
 func (d *UnimplementedFeatureViewDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
-	return nil, nil
+	return d.GetUserSequenceFeatureWithContext(context.Background(), keys, userIdField, sequenceConfig, onlineConfig)
 }
 func (d *UnimplementedFeatureViewDao) GetUserAggregatedSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error) {
-	return nil, nil
+	return d.GetUserAggregatedSequenceFeatureWithContext(context.Background(), keys, userIdField, sequenceConfig, onlineConfig)
 }
 func (d *UnimplementedFeatureViewDao) GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	return d.GetUserBehaviorFeatureWithContext(context.Background(), userIds, events, selectFields, sequenceConfig)
+}
+
+func (d *UnimplementedFeatureViewDao) GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 	return nil, nil
 }
+func (d *UnimplementedFeatureViewDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+func (d *UnimplementedFeatureViewDao) GetUserAggregatedSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (d *UnimplementedFeatureViewDao) GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	return nil, nil
+}
+
 func (d *UnimplementedFeatureViewDao) RowCount(string) int {
 	return 0
 }
@@ -74,6 +95,7 @@ type sequenceInfo struct {
 	event                         string
 	playTime                      float64
 	timestamp                     int64
+	customFieldValue              string
 	onlineBehaviourTableFieldsMap map[string]string
 }
 
@@ -147,8 +169,22 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 
 }
 
+func buildHandledFields(sequenceConfig api.FeatureViewSeqConfig) map[string]bool {
+	fields := map[string]bool{
+		sequenceConfig.ItemIdField:    true,
+		sequenceConfig.TimestampField: true,
+		sequenceConfig.EventField:     true,
+		"ts":                          true,
+	}
+	if sequenceConfig.PlayTimeField != "" {
+		fields[sequenceConfig.PlayTimeField] = true
+	}
+	return fields
+}
+
 func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *api.SeqConfig, sequenceConfig api.FeatureViewSeqConfig, currTime int64) map[string]interface{} {
 	//produce seqeunce feature correspond to easyrec processor
+	handledFields := buildHandledFields(sequenceConfig)
 	sequencesValueMap := make(map[string][]string)
 
 	for _, seq := range sequencesInfos {
@@ -160,6 +196,9 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 		}
 		sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-seq.timestamp))
 		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
+			if handledFields[behaviorField] {
+				continue
+			}
 			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], seq.onlineBehaviourTableFieldsMap[behaviorField])
 		}
 
@@ -174,6 +213,88 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 
 	return properties
 
+}
+
+// makeSequenceFeatures4DlrmHSTU aggregates sequence features for DlrmHSTU model.
+// It groups records by (itemId, customFieldValue) and:
+// - joins events with "|"
+// - takes max timestamp
+// - takes behavior field values from the record with max timestamp
+func makeSequenceFeatures4DlrmHSTU(sequencesInfos []*sequenceInfo, seqConfig *api.SeqConfig, sequenceConfig api.FeatureViewSeqConfig, currTime int64, seqLen int) map[string]interface{} {
+	type aggregatedRecord struct {
+		itemId               string
+		customFieldValue     string
+		events               []string
+		maxTimestamp         int64
+		playTime             float64
+		latestBehaviorFields map[string]string
+	}
+
+	// Group and aggregate by itemId + customFieldValue
+	aggregateMap := make(map[string]*aggregatedRecord, len(sequencesInfos))
+	orderedKeys := make([]string, 0, len(sequencesInfos))
+
+	for _, seq := range sequencesInfos {
+		key := seq.itemId + "\u001D" + seq.customFieldValue
+		if agg, exists := aggregateMap[key]; exists {
+			agg.events = append(agg.events, seq.event)
+			if seq.timestamp > agg.maxTimestamp {
+				agg.maxTimestamp = seq.timestamp
+				agg.playTime = seq.playTime
+				agg.latestBehaviorFields = seq.onlineBehaviourTableFieldsMap
+			}
+		} else {
+			aggregateMap[key] = &aggregatedRecord{
+				itemId:               seq.itemId,
+				customFieldValue:     seq.customFieldValue,
+				events:               []string{seq.event},
+				maxTimestamp:         seq.timestamp,
+				playTime:             seq.playTime,
+				latestBehaviorFields: seq.onlineBehaviourTableFieldsMap,
+			}
+			orderedKeys = append(orderedKeys, key)
+		}
+	}
+
+	// Truncate to seqLen after aggregation
+	if seqLen > 0 && len(orderedKeys) > seqLen {
+		orderedKeys = orderedKeys[:seqLen]
+	}
+
+	handledFields := buildHandledFields(sequenceConfig)
+	if sequenceConfig.CustomDeduplicationField != "" {
+		handledFields[sequenceConfig.CustomDeduplicationField] = true
+	}
+
+	sequencesValueMap := make(map[string][]string)
+	for _, key := range orderedKeys {
+		agg := aggregateMap[key]
+		sequencesValueMap[sequenceConfig.ItemIdField] = append(sequencesValueMap[sequenceConfig.ItemIdField], agg.itemId)
+		sequencesValueMap[sequenceConfig.TimestampField] = append(sequencesValueMap[sequenceConfig.TimestampField], fmt.Sprintf("%d", agg.maxTimestamp))
+		sequencesValueMap[sequenceConfig.EventField] = append(sequencesValueMap[sequenceConfig.EventField], strings.Join(agg.events, "|"))
+		if sequenceConfig.PlayTimeField != "" {
+			sequencesValueMap[sequenceConfig.PlayTimeField] = append(sequencesValueMap[sequenceConfig.PlayTimeField], fmt.Sprintf("%.2f", agg.playTime))
+		}
+		sequencesValueMap["ts"] = append(sequencesValueMap["ts"], fmt.Sprintf("%d", currTime-agg.maxTimestamp))
+		if sequenceConfig.CustomDeduplicationField != "" {
+			sequencesValueMap[sequenceConfig.CustomDeduplicationField] = append(sequencesValueMap[sequenceConfig.CustomDeduplicationField], agg.customFieldValue)
+		}
+		for _, behaviorField := range seqConfig.OnlineBehaviorTableFields {
+			if handledFields[behaviorField] {
+				continue
+			}
+			sequencesValueMap[behaviorField] = append(sequencesValueMap[behaviorField], agg.latestBehaviorFields[behaviorField])
+		}
+	}
+
+	properties := make(map[string]interface{})
+	for key, value := range sequencesValueMap {
+		curSequenceSubName := seqConfig.OnlineSeqName + "__" + key
+		properties[curSequenceSubName] = strings.Join(value, ";")
+	}
+	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], ";")
+
+	return properties
 }
 
 func combineBehaviorFeatures(offlineBehaviorInfo, onlineBehaviorInfo []map[string]interface{}, timestampField string) []map[string]interface{} {

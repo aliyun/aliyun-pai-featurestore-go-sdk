@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -50,7 +51,11 @@ func NewFeatureViewTableStoreDao(config DaoConfig) *FeatureViewTableStoreDao {
 
 }
 
-func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
+func (d *FeatureViewTableStoreDao) GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	result := make([]map[string]interface{}, 0, len(keys))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -134,7 +139,11 @@ func (d *FeatureViewTableStoreDao) GetFeatures(keys []interface{}, selectFields 
 	return result, nil
 }
 
-func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewTableStoreDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 
@@ -405,7 +414,11 @@ func (d *FeatureViewTableStoreDao) GetUserSequenceFeature(keys []interface{}, us
 	return results, nil
 }
 
-func (d *FeatureViewTableStoreDao) GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewTableStoreDao) GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 

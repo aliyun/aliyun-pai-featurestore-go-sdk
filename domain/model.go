@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -89,6 +90,21 @@ func NewModel(model *api.Model, p *Project, lt *LabelTable) *Model {
 }
 
 func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithOptions(joinIds, ModelOptions{})
+}
+
+func (m *Model) GetOnlineFeaturesWithContext(ctx context.Context, joinIds map[string][]interface{}) ([]map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithOptions(joinIds, ModelOptions{Ctx: ctx})
+}
+
+func (m *Model) GetOnlineFeaturesWithOptions(joinIds map[string][]interface{}, opts ModelOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	size := -1
 	for _, joinid := range m.featureEntityJoinIdList {
@@ -106,6 +122,8 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 	}
 
 	var mu sync.Mutex
+	var firstErr error
+	var errOnce sync.Once
 
 	var wg sync.WaitGroup
 	joinIdFeaturesMap := make(map[string][]map[string]interface{})
@@ -119,9 +137,12 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 			wg.Add(1)
 			go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 				defer wg.Done()
-				features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+				var features []map[string]interface{}
+				var err error
+				features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, count: featureViewCount})
 				if err != nil {
-					fmt.Println(err)
+					errOnce.Do(func() { firstErr = err })
+					return
 				}
 
 				mu.Lock()
@@ -132,6 +153,10 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 		}
 	}
 	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	// read keys of child entities with deduplication
 	childJoinIdKeys := make(map[string][]interface{})
@@ -161,6 +186,8 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 	// read features of child entities
 	if len(childJoinIdKeys) > 0 {
 		var childWg sync.WaitGroup
+		var childFirstErr error
+		var childErrOnce sync.Once
 		for childJoinId, keys := range childJoinIdKeys {
 			featureViewCount := m.joinIdFeatureViewCountMap[childJoinId]
 			if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
@@ -168,9 +195,12 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 					childWg.Add(1)
 					go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 						defer childWg.Done()
-						features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+						var features []map[string]interface{}
+						var err error
+						features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, count: featureViewCount})
 						if err != nil {
-							fmt.Println(err)
+							childErrOnce.Do(func() { childFirstErr = err })
+							return
 						}
 
 						mu.Lock()
@@ -181,6 +211,10 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 			}
 		}
 		childWg.Wait()
+
+		if childFirstErr != nil {
+			return nil, childFirstErr
+		}
 	}
 
 	featuresResult := make([]map[string]interface{}, size)
@@ -263,6 +297,22 @@ func (m *Model) GetOnlineFeatures(joinIds map[string][]interface{}) ([]map[strin
 }
 
 func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, featureEntityName string) ([]map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithEntityWithOptions(joinIds, featureEntityName, ModelOptions{})
+}
+
+func (m *Model) GetOnlineFeaturesWithEntityWithContext(ctx context.Context, joinIds map[string][]interface{}, featureEntityName string) ([]map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithEntityWithOptions(joinIds, featureEntityName, ModelOptions{Ctx: ctx})
+}
+
+func (m *Model) GetOnlineFeaturesWithEntityWithOptions(joinIds map[string][]interface{}, featureEntityName string, opts ModelOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	featureEntity, ok := m.featureEntityMap[featureEntityName]
 	if !ok {
 		return nil, fmt.Errorf("feature entity name:%s not found", featureEntityName)
@@ -281,14 +331,19 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 	featureViewCount := len(featureViewMap)
 
 	var mu sync.Mutex
+	var firstErr error
+	var errOnce sync.Once
 
 	for _, featureView := range featureViewMap {
 		wg.Add(1)
 		go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 			defer wg.Done()
-			features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+			var features []map[string]interface{}
+			var err error
+			features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, count: featureViewCount})
 			if err != nil {
-				fmt.Println(err)
+				errOnce.Do(func() { firstErr = err })
+				return
 			}
 			mu.Lock()
 			joinIdFeaturesMap[joinId] = append(joinIdFeaturesMap[joinId], features...)
@@ -297,6 +352,10 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 		}(featureView, featureEntity.FeatureEntityJoinid, joinIds[featureEntity.FeatureEntityJoinid], featureViewCount)
 	}
 	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	featuresResult := make([]map[string]interface{}, size)
 	for i := 0; i < size; i++ {
@@ -349,15 +408,20 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 				}
 			}
 			var childWg sync.WaitGroup
+			var childFirstErr error
+			var childErrOnce sync.Once
 			for childJoinId, keys := range childJoinIdKeys {
 				if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
 					for _, featureView := range featureViewMap {
 						childWg.Add(1)
 						go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 							defer childWg.Done()
-							features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+							var features []map[string]interface{}
+							var err error
+							features, err = featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, count: featureViewCount})
 							if err != nil {
-								fmt.Println(err)
+								childErrOnce.Do(func() { childFirstErr = err })
+								return
 							}
 
 							mu.Lock()
@@ -368,6 +432,10 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 				}
 			}
 			childWg.Wait()
+
+			if childFirstErr != nil {
+				return nil, childFirstErr
+			}
 		}
 
 		// merge features of child entities
@@ -417,6 +485,14 @@ func (m *Model) GetOnlineFeaturesWithEntity(joinIds map[string][]interface{}, fe
 }
 
 func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequenceUserIds []interface{}, featureEntityName string) (map[string]interface{}, error) {
+	return m.GetOnlineFeaturesWithAggregatedSequenceWithContext(context.Background(), userId, sequenceUserIds, featureEntityName)
+}
+
+func (m *Model) GetOnlineFeaturesWithAggregatedSequenceWithContext(ctx context.Context, userId interface{}, sequenceUserIds []interface{}, featureEntityName string) (map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	featureEntity, ok := m.featureEntityMap[featureEntityName]
 	if !ok {
 		return nil, fmt.Errorf("feature entity name:%s not found", featureEntityName)
@@ -425,6 +501,8 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequ
 	joinId := featureEntity.FeatureEntityJoinid
 
 	var wg sync.WaitGroup
+	var firstErr error
+	var errOnce sync.Once
 
 	featureViewMap := m.featureEntityJoinIdMap[featureEntity.FeatureEntityJoinid]
 
@@ -439,16 +517,17 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequ
 			var currentFeatures []map[string]interface{}
 			var err error
 			if featureView.GetType() == constants.Feature_View_Type_Sequence {
-				features, err = featureView.GetOnlineAggregatedFeatures(sequenceUserIds, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+				features, err = featureView.GetOnlineAggregatedFeaturesWithContext(ctx, sequenceUserIds, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
 			} else {
-				currentFeatures, err = featureView.GetOnlineFeatures([]interface{}{userId}, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
+				currentFeatures, err = featureView.GetOnlineFeaturesWithContext(ctx, []interface{}{userId}, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()])
 				if len(currentFeatures) > 0 {
 					features = currentFeatures[0]
 				}
 
 			}
 			if err != nil {
-				fmt.Println(err)
+				errOnce.Do(func() { firstErr = err })
+				return
 			}
 			results[index] = features
 
@@ -457,6 +536,10 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequ
 		idx++
 	}
 	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
 
 	featuresResult := make(map[string]interface{}, len(m.Features))
 	for _, res := range results {
@@ -506,15 +589,18 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequ
 			joinIdFeaturesMap := make(map[string][]map[string]interface{})
 
 			var childWg sync.WaitGroup
+			var childFirstErr error
+			var childErrOnce sync.Once
 			for childJoinId, keys := range childJoinIdKeys {
 				if featureViewMap, exists := m.featureEntityJoinIdMap[childJoinId]; exists {
 					for _, featureView := range featureViewMap {
 						childWg.Add(1)
 						go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 							defer childWg.Done()
-							features, err := featureView.getOnlineFeaturesWithCount(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
+							features, err := featureView.getOnlineFeaturesWithCountWithContext(ctx, keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], featureViewCount)
 							if err != nil {
-								fmt.Println(err)
+								childErrOnce.Do(func() { childFirstErr = err })
+								return
 							}
 
 							mu.Lock()
@@ -525,6 +611,10 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequence(userId interface{}, sequ
 				}
 			}
 			childWg.Wait()
+
+			if childFirstErr != nil {
+				return nil, childFirstErr
+			}
 
 			// merge features of child entities
 			childFeatureIndex := make(map[string]map[string]map[string]interface{}) // join id : key : row values

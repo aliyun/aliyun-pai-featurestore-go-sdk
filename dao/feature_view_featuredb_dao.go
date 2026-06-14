@@ -3,6 +3,7 @@ package dao
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -109,7 +110,7 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 	return &dao
 }
 
-func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
+func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, keys []interface{}, selectFields []string, weight int) ([]map[string]interface{}, error) {
 	result := make([]map[string]interface{}, 0, len(keys))
 	selectFieldsSet := make(map[string]struct{})
 	for _, selectField := range selectFields {
@@ -147,7 +148,7 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 			requestBody := readerPool.Get().(*bytes.Reader)
 			defer readerPool.Put(requestBody)
 			requestBody.Reset(body)
-			req, err := http.NewRequest("POST", url, requestBody)
+			req, err := http.NewRequestWithContext(ctx, "POST", url, requestBody)
 			if err != nil {
 				errChan <- err
 				return
@@ -159,9 +160,14 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 
 			response, err := d.featureDBClient.Client.Do(req)
 			if err != nil {
+				if ctx.Err() != nil {
+					errChan <- ctx.Err()
+					return
+				}
+
 				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table, len(pkeys))
 				requestBody.Reset(body)
-				req, err = http.NewRequest("POST", url, requestBody)
+				req, err = http.NewRequestWithContext(ctx, "POST", url, requestBody)
 				if err != nil {
 					errChan <- err
 					return
@@ -204,7 +210,11 @@ func (d *FeatureViewFeatureDBDao) GetFeatures(keys []interface{}, selectFields [
 					break // End of stream
 				}
 				if err != nil {
-					errChan <- err
+					if ctx.Err() != nil {
+						errChan <- ctx.Err()
+					} else {
+						errChan <- err
+					}
 					return
 				}
 
@@ -587,9 +597,10 @@ type FeatureDBBatchGetKKVRequest struct {
 	PKs       []string `json:"pks"`
 	Length    int      `json:"length"`
 	WithValue bool     `json:"with_value"`
+	SkipMerge bool     `json:"skip_merge"`
 }
 
-func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error) {
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 
@@ -632,9 +643,12 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 			Length:    seqLen,
 			WithValue: withValue,
 		}
+		if sequenceConfig.DlrmHSTU {
+			request.SkipMerge = true
+		}
 		body, _ := json.Marshal(request)
 		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
-		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 		if err != nil {
 			errChan <- err
 			return nil
@@ -645,8 +659,12 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 
 		response, err := d.featureDBClient.Client.Do(req)
 		if err != nil {
+			if ctx.Err() != nil {
+				errChan <- ctx.Err()
+				return nil
+			}
 			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
-			req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+			req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
@@ -686,7 +704,11 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				break
 			}
 			if err != nil {
-				errChan <- err
+				if ctx.Err() != nil {
+					errChan <- ctx.Err()
+				} else {
+					errChan <- err
+				}
 				return nil
 			}
 
@@ -701,6 +723,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 					continue
 				}
 				var itemId string
+				var customFieldValue string
 				if sequenceConfig.DeduplicationMethodNum == 1 {
 					itemId = string(kkv.Sk())
 				} else if sequenceConfig.DeduplicationMethodNum == 2 {
@@ -710,6 +733,14 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 						continue
 					}
 					itemId = itemIdTimestamp[0]
+				} else if sequenceConfig.DeduplicationMethodNum == 3 {
+					sk := string(kkv.Sk())
+					itemIdCustomField := strings.Split(sk, "\u001D")
+					if len(itemIdCustomField) != 2 {
+						continue
+					}
+					itemId = itemIdCustomField[0]
+					customFieldValue = itemIdCustomField[1]
 				} else {
 					continue
 				}
@@ -717,6 +748,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 				seq := new(sequenceInfo)
 				seq.event = userIdEvent[1]
 				seq.itemId = itemId
+				seq.customFieldValue = customFieldValue
 				seq.timestamp = kkv.EventTimestamp()
 				seq.playTime = kkv.PlayTime()
 
@@ -827,14 +859,20 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 					onlineSequences := fetchDataFunc(seqEvent, maxLen, key, seqConfigsBehaviorFields)
 
 					for _, seqConfig := range seqConfigs {
-						var truncatedSequences []*sequenceInfo
-						if seqConfig.SeqLen >= len(onlineSequences) {
-							truncatedSequences = onlineSequences
+						// Choose aggregation function based on DlrmHSTU mode
+						var subproperties map[string]interface{}
+						if sequenceConfig.DlrmHSTU {
+							// DlrmHSTU: pass all raw sequences, truncate after aggregation
+							subproperties = makeSequenceFeatures4DlrmHSTU(onlineSequences, seqConfig, sequenceConfig, currTime, seqConfig.SeqLen)
 						} else {
-							truncatedSequences = onlineSequences[:seqConfig.SeqLen]
+							var truncatedSequences []*sequenceInfo
+							if seqConfig.SeqLen >= len(onlineSequences) {
+								truncatedSequences = onlineSequences
+							} else {
+								truncatedSequences = onlineSequences[:seqConfig.SeqLen]
+							}
+							subproperties = makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
 						}
-
-						subproperties := makeSequenceFeatures4FeatureDB(truncatedSequences, seqConfig, sequenceConfig, currTime)
 						mu.Lock()
 						for k, value := range subproperties {
 							properties[k] = value
@@ -856,6 +894,10 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 
 	close(errChan)
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	for err := range errChan {
 		if err != nil {
 			return nil, err
@@ -865,7 +907,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeature(keys []interface{}, use
 	return results, nil
 }
 
-func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error) {
+func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error) {
 	currTime := time.Now().Unix()
 	sequencePlayTimeMap := makePlayTimeMap(sequenceConfig.PlayTimeFilter)
 
@@ -910,9 +952,12 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 			Length:    seqLen,
 			WithValue: withValue,
 		}
+		if sequenceConfig.DlrmHSTU {
+			request.SkipMerge = true
+		}
 		body, _ := json.Marshal(request)
 		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
-		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 		if err != nil {
 			errChan <- err
 			return nil
@@ -923,8 +968,12 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 
 		response, err := d.featureDBClient.Client.Do(req)
 		if err != nil {
+			if ctx.Err() != nil {
+				errChan <- ctx.Err()
+				return nil
+			}
 			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
-			req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+			req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
@@ -964,7 +1013,11 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 				break // End of stream
 			}
 			if err != nil {
-				errChan <- err
+				if ctx.Err() != nil {
+					errChan <- ctx.Err()
+				} else {
+					errChan <- err
+				}
 				return nil
 			}
 
@@ -988,6 +1041,13 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 						continue
 					}
 					itemId = itemIdTimestamp[0]
+				} else if sequenceConfig.DeduplicationMethodNum == 3 {
+					sk := string(kkv.Sk())
+					itemIdCustomField := strings.Split(sk, "\u001D")
+					if len(itemIdCustomField) != 2 {
+						continue
+					}
+					itemId = itemIdCustomField[0]
 				} else {
 					continue
 				}
@@ -1116,6 +1176,18 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeature(keys []interf
 	}
 	eventWg.Wait()
 
+	close(errChan)
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if len(keys) > 0 {
 		results[userIdField] = keys[0]
 	}
@@ -1129,7 +1201,7 @@ type FeatureDBScanKKVRequest struct {
 	WithValue bool     `json:"with_value"`
 }
 
-func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
+func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
 	selectFieldsSet := make(map[string]struct{})
 	for _, selectField := range selectFields {
 		selectFieldsSet[selectField] = struct{}{}
@@ -1150,7 +1222,7 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 			}
 			body, _ := json.Marshal(request)
 			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
-			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+			req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
@@ -1161,8 +1233,12 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 
 			response, err = d.featureDBClient.Client.Do(req)
 			if err != nil {
+				if ctx.Err() != nil {
+					errChan <- ctx.Err()
+					return nil
+				}
 				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
-				req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+				req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 				if err != nil {
 					errChan <- err
 					return nil
@@ -1187,7 +1263,7 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 			}
 			body, _ := json.Marshal(request)
 			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
-			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+			req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 			if err != nil {
 				errChan <- err
 				return nil
@@ -1198,8 +1274,12 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 
 			response, err = d.featureDBClient.Client.Do(req)
 			if err != nil {
+				if ctx.Err() != nil {
+					errChan <- ctx.Err()
+					return nil
+				}
 				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
-				req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+				req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 				if err != nil {
 					errChan <- err
 					return nil
@@ -1241,7 +1321,11 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 				break // End of stream
 			}
 			if err != nil {
-				errChan <- err
+				if ctx.Err() != nil {
+					errChan <- ctx.Err()
+				} else {
+					errChan <- err
+				}
 				return nil
 			}
 			kkvRecordBlock := fdbserverfb.GetRootAsKKVRecordBlock(buf, 0)
@@ -1337,6 +1421,17 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeature(userIds []interface{}, 
 		}(userId)
 	}
 	wg.Wait()
+	close(errChan)
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return results, nil
 }

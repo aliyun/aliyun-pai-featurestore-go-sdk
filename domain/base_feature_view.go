@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -131,70 +132,34 @@ func NewBaseFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity
 }
 
 func (f *BaseFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
-	var selectFields []string
-	selectFields = append(selectFields, f.primaryKeyField.Name)
-	seenFields := make(map[string]bool)
-	seenFields[f.primaryKeyField.Name] = true
-	for _, featureName := range features {
-		if featureName == "*" {
-			selectFields = append(selectFields, f.featureFields...)
-		} else {
-			if seenFields[featureName] {
-				continue
-			}
-			found := false
-			for _, field := range f.featureFields {
-				if field == featureName {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return nil, fmt.Errorf("feature name :%s not found in the featureview fields", featureName)
-			}
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
+}
 
-			selectFields = append(selectFields, featureName)
-			seenFields[featureName] = true
-		}
-	}
-
-	for featureName := range alias {
-		found := false
-
-		for _, field := range f.featureFields {
-			if field == featureName {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("feature name :%s not found in the featureview fields", featureName)
-		}
-	}
-
-	featureResult, err := f.featureViewDao.GetFeatures(joinIds, selectFields, 1)
-
-	if f.primaryKeyField.Name != f.FeatureEntity.FeatureEntityJoinid {
-		for _, featureMap := range featureResult {
-			featureMap[f.FeatureEntity.FeatureEntityJoinid] = featureMap[f.primaryKeyField.Name]
-			delete(featureMap, f.primaryKeyField.Name)
-		}
-	}
-
-	for featureName, aliasName := range alias {
-		for _, featureMap := range featureResult {
-			if _, ok := featureMap[featureName]; ok {
-				featureMap[aliasName] = featureMap[featureName]
-				delete(featureMap, featureName)
-			}
-		}
-	}
-
-	return featureResult, err
-
+func (f *BaseFeatureView) GetOnlineFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
 }
 
 func (f *BaseFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	return f.getOnlineFeaturesWithCountWithContext(context.Background(), joinIds, features, alias, count)
+}
+
+func (f *BaseFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	count := opts.count
+	if count <= 0 {
+		count = 1
+	}
+	return f.getOnlineFeaturesWithCountWithContext(ctx, joinIds, features, alias, count)
+}
+
+func (f *BaseFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	var selectFields []string
 	selectFields = append(selectFields, f.primaryKeyField.Name)
 	seenFields := make(map[string]bool)
@@ -236,7 +201,10 @@ func (f *BaseFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, feat
 		}
 	}
 
-	featureResult, err := f.featureViewDao.GetFeatures(joinIds, selectFields, count)
+	featureResult, err := f.featureViewDao.GetFeaturesWithContext(ctx, joinIds, selectFields, count)
+	if err != nil {
+		return nil, err
+	}
 
 	if f.primaryKeyField.Name != f.FeatureEntity.FeatureEntityJoinid {
 		for _, featureMap := range featureResult {
@@ -261,7 +229,15 @@ func (f *BaseFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{}, fea
 	return nil, errors.New("only sequence feature view supports GetOnlineAggregatedFeatures")
 }
 
+func (f *BaseFeatureView) GetOnlineAggregatedFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
+	return nil, errors.New("only sequence feature view supports GetOnlineAggregatedFeatures")
+}
+
 func (f *BaseFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
+	return nil, errors.New("only sequence feature view supports GetBehaviorFeatures")
+}
+
+func (f *BaseFeatureView) GetBehaviorFeaturesWithContext(ctx context.Context, userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
 	return nil, errors.New("only sequence feature view supports GetBehaviorFeatures")
 }
 

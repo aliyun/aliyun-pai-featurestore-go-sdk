@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,7 +93,13 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 				panic("deduplication_method invalid")
 			}
 		}
-		sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 1
+		// Method 3: 3-field + custom field
+		if sequenceFeatureView.sequenceConfig.CustomDeduplicationField != "" {
+			sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 3
+		} else {
+			// Method 1: 3-field only
+			sequenceFeatureView.sequenceConfig.DeduplicationMethodNum = 1
+		}
 	} else if len(sequenceFeatureView.sequenceConfig.DeduplicationMethod) == len(requiredElements2) {
 		for i, v := range sequenceFeatureView.sequenceConfig.DeduplicationMethod {
 			if v != requiredElements2[i] {
@@ -209,10 +216,37 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 }
 
 func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
+}
+
+func (f *SequenceFeatureView) GetOnlineFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
+}
+
+func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
+}
+
+func (f *SequenceFeatureView) getOnlineFeaturesWithCountWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
+	return f.GetOnlineFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
+}
+
+func (f *SequenceFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) ([]map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if f.sequenceConfig.RegistrationMode == constants.Seq_Registration_Mode_Only_Behavior {
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
 	}
 	sequenceConfig := f.sequenceConfig
+	if opts.DlrmHSTU && sequenceConfig.DeduplicationMethodNum == 3 {
+		sequenceConfig.DlrmHSTU = true
+	}
 	onlineConfig := []*api.SeqConfig{}
 	seenFields := make(map[string]bool)
 
@@ -238,7 +272,10 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 		}
 	}
 
-	sequenceFeatureResults, err := f.featureViewDao.GetUserSequenceFeature(joinIds, f.userIdField, sequenceConfig, onlineConfig)
+	sequenceFeatureResults, err := f.featureViewDao.GetUserSequenceFeatureWithContext(ctx, joinIds, f.userIdField, sequenceConfig, onlineConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	if f.userIdField != f.FeatureEntity.FeatureEntityJoinid {
 		for _, sequencefeatureMap := range sequenceFeatureResults {
@@ -250,11 +287,15 @@ func (f *SequenceFeatureView) GetOnlineFeatures(joinIds []interface{}, features 
 	return sequenceFeatureResults, err
 }
 
-func (f *SequenceFeatureView) getOnlineFeaturesWithCount(joinIds []interface{}, features []string, alias map[string]string, count int) ([]map[string]interface{}, error) {
-	return f.GetOnlineFeatures(joinIds, features, alias)
+func (f *SequenceFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
+	return f.GetOnlineAggregatedFeaturesWithContext(context.Background(), joinIds, features, alias)
 }
 
-func (f *SequenceFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
+func (f *SequenceFeatureView) GetOnlineAggregatedFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	if f.sequenceConfig.RegistrationMode == constants.Seq_Registration_Mode_Only_Behavior {
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
 	}
@@ -284,12 +325,20 @@ func (f *SequenceFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{},
 		}
 	}
 
-	sequenceFeatureResults, err := f.featureViewDao.GetUserAggregatedSequenceFeature(joinIds, f.userIdField, sequenceConfig, onlineConfig)
+	sequenceFeatureResults, err := f.featureViewDao.GetUserAggregatedSequenceFeatureWithContext(ctx, joinIds, f.userIdField, sequenceConfig, onlineConfig)
 
 	return sequenceFeatureResults, err
 }
 
 func (f *SequenceFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
+	return f.GetBehaviorFeaturesWithContext(context.Background(), userIds, events, features)
+}
+
+func (f *SequenceFeatureView) GetBehaviorFeaturesWithContext(ctx context.Context, userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	var selectFields []string
 	seenFields := make(map[string]bool)
 
@@ -327,7 +376,10 @@ func (f *SequenceFeatureView) GetBehaviorFeatures(userIds []interface{}, events 
 		}
 	}
 
-	behaviorFeatureResult, err := f.featureViewDao.GetUserBehaviorFeature(userIds, events, selectFields, f.sequenceConfig)
+	behaviorFeatureResult, err := f.featureViewDao.GetUserBehaviorFeatureWithContext(ctx, userIds, events, selectFields, f.sequenceConfig)
+	if err != nil {
+		return nil, err
+	}
 
 	if f.userIdField != f.FeatureEntity.FeatureEntityJoinid {
 		for _, behaviorFeatureMap := range behaviorFeatureResult {
