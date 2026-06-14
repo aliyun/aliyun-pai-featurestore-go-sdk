@@ -429,9 +429,12 @@ func (f *SequenceFeatureView) WriteFeatures(data []map[string]interface{}) error
 			return fmt.Errorf("field '%s' must not be null for record at index %d", timestampField, i)
 		}
 
-		playTimeValue, exists := featureMap[playTimeField]
-		if !exists || playTimeValue == nil {
-			return fmt.Errorf("field '%s' must not be null or empty for record at index %d", playTimeField, i)
+		if playTimeField != "" {
+			playTimeValue, exists := featureMap[playTimeField]
+			if !exists || playTimeValue == nil {
+				return fmt.Errorf("field '%s' must not be null or empty for record at index %d", playTimeField, i)
+			}
+			_ = playTimeValue
 		}
 
 	}
