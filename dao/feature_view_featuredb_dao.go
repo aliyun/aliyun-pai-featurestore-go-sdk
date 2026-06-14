@@ -1575,8 +1575,14 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDBDirect(batch []map[string]interf
 
 	response, err := doRequest(false)
 	if err != nil {
+		if response != nil {
+			response.Body.Close()
+		}
 		response, err = doRequest(true)
 		if err != nil {
+			if response != nil {
+				response.Body.Close()
+			}
 			return err
 		}
 	}
@@ -1731,6 +1737,9 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 
 		response, err := d.featureDBClient.Client.Do(req)
 		if err != nil {
+			if response != nil {
+				response.Body.Close()
+			}
 			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/write", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
 			requestBody = map[string]interface{}{
 				"content":    data,
@@ -1751,6 +1760,9 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 
 			response, err = d.featureDBClient.Client.Do(req)
 			if err != nil {
+				if response != nil {
+					response.Body.Close()
+				}
 				return err
 			}
 		}
