@@ -1,4 +1,6 @@
 featurestore/__debug_bin
+.worktrees/
+doc/
 main*
 output.txt
 .DS_Store

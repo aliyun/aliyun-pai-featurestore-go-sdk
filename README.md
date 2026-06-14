@@ -422,3 +422,58 @@ features, err := model_feature.GetOnlineFeaturesWithEntity(map[string][]interfac
 ]
 ```
 
+### 实时写入特征
+目前写入功能支持在线数据源为 FeatureDB类型的实时FeatureView和序列FeatureView。
+假设实时FeatureView定义如下：![img.png](img.png)
+```
+    project, err := client.GetProject("test_pro1")
+    if err != nil {
+    // t.Fatal(err)
+    }
+    featureView := project.GetFeatureView("feature_view_online")
+    
+    // 2. 构造数据
+    writeData := make([]map[string]interface{}, 0, 10)
+	joinIds := make([]interface{}, 10)
+	for i := 0; i < 10; i++ { // 10 个不同的用户
+		int64Seed := rand.Int63n(10000000)
+		int32Seed := rand.Int31n(1000)
+		float32Seed := rand.Float32()
+		float64Seed := rand.Float64()
+		joinIds[i] = int64Seed
+		record := map[string]interface{}{
+			"user_id":       fmt.Sprintf("%d", int64Seed),
+			"string_field":  uuid.NewV1().String()[0:8],
+			"int32_field":   int32(i) * int32Seed,
+			"int64_field":   int64(i) * int64Seed,
+			"float_field":   float32(i) * float32Seed,
+			"double_field":  float64(i) * float64Seed,
+			"boolean_field": i%2 == 0,
+		}
+		writeData = append(writeData, record)
+	}
+    
+    // 3. 异步写入
+    featureView.WriteFeatures(writeData)
+    
+    // 4. 强制刷新（全部数据写入完成后，刷新清理一次）
+    featureView.WriteFlush()
+    
+    // 目前 SDK 也支持部分字段的写入。 上面的例子中，调用 WriteFeatures 方法，默认是整行替换的。如果只想部分字段 的更新，可以调用指定的部分字段写入模式, 参数 constants.PartialFieldWrite或者直接传字符串PartialFieldWrite即可。
+    featureView.WriteFeaturesWithInsertMode(writeData, constants.PartialFieldWrite)
+   
+    // 5. 验证
+    time.Sleep(3 * time.Second) //确保写入完成再读取
+    features, err := featureView.GetOnlineFeatures(joinIds, []string{"*"}, nil)
+    if err != nil {
+		t.Fatal(err)
+    }
+
+    if len(features) == 0 {
+		t.Error("Expected to read some features, but got none")
+    }
+
+    for _, feature := range features {
+		fmt.Printf("Feature: %v\n", feature)
+    }
+```

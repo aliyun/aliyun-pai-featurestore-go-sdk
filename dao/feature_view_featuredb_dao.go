@@ -53,6 +53,15 @@ type FeatureViewFeatureDBDao struct {
 	fields          []string
 	signature       string
 	primaryKeyField string
+
+	// async write fields
+	mu          sync.Mutex
+	writeData   []map[string]interface{}
+	batchSize   int
+	flushTicker *time.Ticker
+	stopChan    chan struct{}
+	closeOnce   sync.Once
+	closed      bool
 }
 
 func SkipBaseTypeBytes(dataCursor *utils.ByteCursor, fieldType constants.FSType) {
@@ -83,13 +92,20 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		signature:       config.FeatureDBSignature,
 		primaryKeyField: config.PrimaryKeyField,
 		fields:          config.Fields,
+		writeData:       make([]map[string]interface{}, 0, 100),
+		batchSize:       20,
+		stopChan:        make(chan struct{}),
 	}
+
 	client, err := featuredb.GetFeatureDBClient()
 	if err != nil {
 		return nil
 	}
 
 	dao.featureDBClient = client
+
+	// start background async write goroutine
+	go dao.startAsyncWrite()
 
 	return &dao
 }
@@ -663,8 +679,8 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 				return nil
 			}
 		}
-		defer response.Body.Close() // 确保关闭response.Body
-		// 检查状态码
+		defer response.Body.Close()
+
 		if response.StatusCode != http.StatusOK {
 			bodyBytes, err := io.ReadAll(response.Body)
 			if err != nil {
@@ -685,7 +701,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 		for {
 			buf, err := deserialize(reader, headerBuf)
 			if err == io.EOF {
-				break // End of stream
+				break
 			}
 			if err != nil {
 				if ctx.Err() != nil {
@@ -1437,6 +1453,183 @@ func deserialize(r *bufio.Reader, headerBuf []byte) ([]byte, error) {
 
 	return data, nil
 }
+
+func (d *FeatureViewFeatureDBDao) WriteFlush() {
+	// idempotent: stop background writer on first call
+	d.closeOnce.Do(func() {
+		close(d.stopChan)
+		if d.flushTicker != nil {
+			d.flushTicker.Stop()
+		}
+		d.mu.Lock()
+		d.closed = true
+		d.mu.Unlock()
+	})
+
+	// synchronous drain of remaining buffered data
+	d.mu.Lock()
+	if len(d.writeData) == 0 {
+		d.mu.Unlock()
+		return
+	}
+	dataToWrite := d.writeData
+	d.writeData = make([]map[string]interface{}, 0, 100)
+	d.mu.Unlock()
+
+	log.Printf("write flush %d", len(dataToWrite))
+	if err := d.writeFeatureDB(dataToWrite); err != nil {
+		log.Printf("request featuredb error: %s", err.Error())
+	}
+}
+
+func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
+	d.flushTicker = time.NewTicker(50 * time.Millisecond)
+	defer d.flushTicker.Stop()
+
+	for {
+		select {
+		case <-d.flushTicker.C:
+			d.mu.Lock()
+			if len(d.writeData) == 0 {
+				d.mu.Unlock()
+				continue
+			}
+			dataToWrite := d.writeData
+			d.writeData = make([]map[string]interface{}, 0, 100)
+			d.mu.Unlock()
+
+			// synchronous write to ensure data is persisted before next tick
+			if err := d.writeFeatureDB(dataToWrite); err != nil {
+				log.Printf("request featuredb error: %s", err.Error())
+			}
+
+		case <-d.stopChan:
+			return
+		}
+	}
+}
+
+func (d *FeatureViewFeatureDBDao) WriteFeatures(data []map[string]interface{}) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		log.Printf("WriteFeatures called after WriteFlush, data will be discarded")
+		return
+	}
+	d.writeData = append(d.writeData, data...)
+}
+
+// 实时写入数据
+func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) error {
+	var wg sync.WaitGroup
+	batchSize := 20
+	numBatches := (len(data) + batchSize - 1) / batchSize
+	errChan := make(chan error, numBatches)
+	//基础的写入func
+	writeFeatureDBFunc := func(data []map[string]interface{}) error {
+		insertMode := constants.Unknown
+		for _, item := range data {
+			if mode, exists := item["__insert_mode__"]; exists {
+				if m, ok := mode.(string); ok {
+					insertMode = m
+				}
+				delete(item, "__insert_mode__")
+			}
+		}
+
+		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/write", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
+		requestBody := map[string]interface{}{
+			"content":    data,
+			"write_mode": insertMode,
+		}
+
+		body, err := json.Marshal(requestBody)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", d.featureDBClient.Token)
+		req.Header.Set("Auth", d.signature)
+
+		response, err := d.featureDBClient.Client.Do(req)
+		if err != nil {
+			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/write", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
+			requestBody = map[string]interface{}{
+				"content":    data,
+				"write_mode": insertMode,
+			}
+
+			body, err = json.Marshal(requestBody)
+			if err != nil {
+				return err
+			}
+			req, err = http.NewRequest("POST", url, bytes.NewReader(body))
+			if err != nil {
+				return err
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", d.featureDBClient.Token)
+			req.Header.Set("Auth", d.signature)
+
+			response, err = d.featureDBClient.Client.Do(req)
+			if err != nil {
+				return err
+			}
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			bodyBytes, err := io.ReadAll(response.Body)
+			if err != nil {
+				return err
+			}
+			var message string
+			var bodyMap map[string]interface{}
+			if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+				if msg, found := bodyMap["message"]; found {
+					message = fmt.Sprintf("%v", msg)
+				}
+			}
+			return fmt.Errorf("featuredb write failed, StatusCode: %d, message: %s", response.StatusCode, message)
+		}
+
+		return nil
+	}
+
+	for i := 0; i < numBatches; i++ {
+		start := i * batchSize
+		end := start + batchSize
+		if end > len(data) {
+			end = len(data)
+		}
+
+		wg.Add(1)
+		go func(batch []map[string]interface{}) {
+			defer wg.Done()
+			err := writeFeatureDBFunc(batch)
+			if err != nil {
+				errChan <- err
+			}
+		}(data[start:end])
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	for err := range errChan {
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int, error) {
 	start := time.Now()
 	snapshotId, _, err := d.createSnapshot()

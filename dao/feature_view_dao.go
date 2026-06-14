@@ -29,6 +29,8 @@ type FeatureViewDao interface {
 	RowCount(string) int
 	RowCountIds(string) ([]string, int, error)
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
+	WriteFeatures(data []map[string]interface{})
+	WriteFlush()
 }
 
 type UnimplementedFeatureViewDao struct {
@@ -69,6 +71,10 @@ func (d *UnimplementedFeatureViewDao) RowCountIds(string) ([]string, int, error)
 func (d *UnimplementedFeatureViewDao) ScanAndIterateData(filter string, ch chan<- string) ([]string, error) {
 	return nil, nil
 }
+
+func (d *UnimplementedFeatureViewDao) WriteFeatures(data []map[string]interface{}) {}
+
+func (d *UnimplementedFeatureViewDao) WriteFlush() {}
 
 func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 	if config.DatasourceType == constants.Datasource_Type_Hologres {
