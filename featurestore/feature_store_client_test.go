@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"fortio.org/assert"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverpb"
 	"github.com/expr-lang/expr"
@@ -586,6 +587,165 @@ func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestWriteFeaturesToFeatureViewWithPartialFieldWrite(t *testing.T) {
+
+	onlineFeatureView := "user_test_3"
+
+	var fullWriteData []map[string]interface{}
+
+	t.Run("FullRowWrite", func(t *testing.T) {
+		client, err := createFeatureStoreClient(region, projectName2)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		project, err := client.GetProject(projectName2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		featureView := project.GetFeatureView(onlineFeatureView)
+		if featureView == nil {
+			t.Fatal("feature view not exist")
+		}
+
+		fullWriteData = make([]map[string]interface{}, 0, 5)
+		for i := 10; i < 15; i++ {
+			var boolSeed bool
+			if i%2 == 0 {
+				boolSeed = true
+			} else {
+				boolSeed = false
+			}
+			record := map[string]interface{}{
+				"user_id":       int64(185284895 + i),
+				"string_field":  fmt.Sprintf("full_str_%d", i),
+				"int32_field":   int32(i * 100),
+				"int64_field":   int64(i * 1000),
+				"float_field":   float32(i) * 1.5,
+				"double_field":  float64(i) * 2.5,
+				"boolean_field": boolSeed,
+			}
+			fullWriteData = append(fullWriteData, record)
+		}
+
+		featureView.WriteFeatures(fullWriteData)
+		featureView.WriteFlush()
+		time.Sleep(3 * time.Second)
+	})
+
+	t.Run("PartialFieldWrite", func(t *testing.T) {
+		client, err := createFeatureStoreClient(region, projectName2)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		project, err := client.GetProject(projectName2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		featureView := project.GetFeatureView(onlineFeatureView)
+		if featureView == nil {
+			t.Fatal("feature view not exist")
+		}
+
+		partialWriteData := make([]map[string]interface{}, 0, 5)
+		for i := 10; i < 15; i++ {
+			record := map[string]interface{}{
+				"user_id":      int64(185284895 + i),
+				"string_field": fmt.Sprintf("partial_str_%d", i),
+				"int32_field":  int32(i * 999),
+			}
+			partialWriteData = append(partialWriteData, record)
+		}
+
+		featureView.WriteFeaturesWithInsertMode(partialWriteData, constants.PartialFieldWrite)
+		featureView.WriteFlush()
+		time.Sleep(3 * time.Second)
+
+		// read and verify
+		features, err := featureView.GetOnlineFeatures([]interface{}{int64(185284905), int64(185284906), int64(185284907), int64(185284908), int64(185284909)}, []string{"*"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(features) == 0 {
+			t.Fatal("get online feature none")
+		}
+
+		// build expected: full write as base, then overlay partial write fields
+		expectedMap := make(map[int64]map[string]interface{})
+		for _, record := range fullWriteData {
+			expectedMap[record["user_id"].(int64)] = record
+		}
+		for _, record := range partialWriteData {
+			uid := record["user_id"].(int64)
+			for k, v := range record {
+				expectedMap[uid][k] = v
+			}
+		}
+
+		for _, feature := range features {
+			fmt.Println(feature)
+
+			userID, ok := feature["user_id"]
+			if !ok {
+				t.Fatal("missing user_id field")
+			}
+			uid, ok := userID.(int64)
+			if !ok {
+				t.Fatalf("user_id expected int64, got %T", userID)
+			}
+
+			expected, exists := expectedMap[uid]
+			if !exists {
+				t.Fatalf("unexpected user_id %d in results", uid)
+			}
+
+			// verify partially written fields have new values
+			if v, ok := feature["string_field"]; ok {
+				if v != expected["string_field"] {
+					t.Fatalf("user_id=%d string_field mismatch: got %v, want %v", uid, v, expected["string_field"])
+				}
+			}
+			if v, ok := feature["int32_field"]; ok {
+				if v != expected["int32_field"] {
+					t.Fatalf("user_id=%d int32_field mismatch: got %v, want %v", uid, v, expected["int32_field"])
+				}
+			}
+
+			// verify non-updated fields are preserved from full write
+			if v, ok := feature["int64_field"]; ok {
+				if v != expected["int64_field"] {
+					t.Fatalf("user_id=%d int64_field mismatch: got %v, want %v", uid, v, expected["int64_field"])
+				}
+			} else {
+				t.Fatalf("user_id=%d int64_field missing after partial write, expected preserved", uid)
+			}
+			if v, ok := feature["float_field"]; ok {
+				if v != expected["float_field"] {
+					t.Fatalf("user_id=%d float_field mismatch: got %v, want %v", uid, v, expected["float_field"])
+				}
+			} else {
+				t.Fatalf("user_id=%d float_field missing after partial write, expected preserved", uid)
+			}
+			if v, ok := feature["double_field"]; ok {
+				if v != expected["double_field"] {
+					t.Fatalf("user_id=%d double_field mismatch: got %v, want %v", uid, v, expected["double_field"])
+				}
+			} else {
+				t.Fatalf("user_id=%d double_field missing after partial write, expected preserved", uid)
+			}
+			if v, ok := feature["boolean_field"]; ok {
+				if v != expected["boolean_field"] {
+					t.Fatalf("user_id=%d boolean_field mismatch: got %v, want %v", uid, v, expected["boolean_field"])
+				}
+			} else {
+				t.Fatalf("user_id=%d boolean_field missing after partial write, expected preserved", uid)
+			}
+		}
+	})
 }
 
 func TestWriteFeaturesToSequenceFeatureViewAsync(t *testing.T) {
