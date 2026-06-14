@@ -310,16 +310,36 @@ func (f *BaseFeatureView) WriteFeaturesWithMode(data []map[string]interface{}, i
 	f.featureViewDao.WriteFeatures(filteredData)
 }
 
-func (f *BaseFeatureView) WriteFeatures(data []map[string]interface{}) error {
+// WriteFeatures dispatches the rows to the underlying DAO.
+//
+// By default the call is non-blocking: rows are appended to the in-memory
+// buffer that the DAO's background goroutine flushes to the legacy /write
+// endpoint. Pass WithDirect() to bypass the buffer and write synchronously
+// via FeatureDB's /write_direct endpoint, in which case the returned error
+// reflects the result of the HTTP call.
+func (f *BaseFeatureView) WriteFeatures(data []map[string]interface{}, opts ...WriteOption) error {
+	o := resolveWriteOptions(opts)
+	if o.Direct {
+		if o.InsertMode != "" && o.InsertMode != constants.FullRowWrite {
+			return fmt.Errorf("WithDirect only supports %s, got %q", constants.FullRowWrite, o.InsertMode)
+		}
+		return f.featureViewDao.WriteFeaturesDirect(data)
+	}
+	if o.InsertMode != "" {
+		for _, item := range data {
+			if item != nil {
+				item["__insert_mode__"] = o.InsertMode
+			}
+		}
+	}
 	f.featureViewDao.WriteFeatures(data)
 	return nil
 }
 
+// WriteFeaturesWithInsertMode is preserved for backward compatibility and
+// is equivalent to WriteFeatures(data, WithInsertMode(insertMode)).
 func (f *BaseFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string) {
-	for _, item := range data {
-		item["__insert_mode__"] = insertMode
-	}
-	f.featureViewDao.WriteFeatures(data)
+	_ = f.WriteFeatures(data, WithInsertMode(insertMode))
 }
 
 func (f *BaseFeatureView) WriteFlush() {

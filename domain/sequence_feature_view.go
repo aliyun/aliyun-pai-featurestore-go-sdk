@@ -440,6 +440,9 @@ func (f *SequenceFeatureView) ScanAndIterateData(filter string, ch chan<- string
 	return nil, errors.New("unimplemented")
 }
 
+// WriteFeaturesWithInsertMode preserves the legacy signature. Sequence
+// feature views are always written in full-row mode, so the insertMode
+// argument is intentionally ignored to keep parity with master.
 func (f *SequenceFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string) {
 	f.featureViewDao.WriteFeatures(data)
 }
@@ -448,7 +451,19 @@ func (f *SequenceFeatureView) WriteFlush() {
 	f.featureViewDao.WriteFlush()
 }
 
-func (f *SequenceFeatureView) WriteFeatures(data []map[string]interface{}) error {
+// WriteFeatures persists sequence rows through the underlying DAO.
+//
+// Sequence feature views are KKV-shaped on FeatureDB, so the synchronous
+// /write_direct endpoint (which targets KV tables only) is not supported;
+// passing WithDirect returns an error early without sending the request.
+// Sequence rows are always written in full-row mode, so WithInsertMode is
+// ignored.
+func (f *SequenceFeatureView) WriteFeatures(data []map[string]interface{}, opts ...WriteOption) error {
+	o := resolveWriteOptions(opts)
+	if o.Direct {
+		return errors.New("WithDirect is not supported by sequence feature views; /write_direct only accepts KV tables")
+	}
+
 	sequenceFeatureViewConfig := api.FeatureViewSeqConfig{}
 	err := json.Unmarshal([]byte(f.Config), &sequenceFeatureViewConfig)
 	if err != nil {
