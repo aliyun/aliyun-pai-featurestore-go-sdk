@@ -1531,14 +1531,6 @@ func (d *FeatureViewFeatureDBDao) WriteFeaturesDirect(data []map[string]interfac
 		return errors.New("WriteFeaturesDirect requires a primary key field on the feature view")
 	}
 
-	// /write_direct only supports FullRowWrite; strip any caller-injected
-	// __insert_mode__ marker to avoid leaking it into the request body.
-	for _, item := range data {
-		if item != nil {
-			delete(item, "__insert_mode__")
-		}
-	}
-
 	const directBatchSize = 200
 	numBatches := (len(data) + directBatchSize - 1) / directBatchSize
 	for i := 0; i < numBatches; i++ {
