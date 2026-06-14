@@ -35,7 +35,14 @@ type FeatureView interface {
 	// If stream feature view can iterate the data deliver to the channel
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
 
-	WriteFeatures(data []map[string]interface{}) error
+	// WriteFeatures buffers (or, with WithDirect, synchronously sends)
+	// rows to the underlying online store. WithDirect is currently only
+	// honored by FeatureDB-backed feature views.
+	WriteFeatures(data []map[string]interface{}, opts ...WriteOption) error
+
+	// WriteFeaturesWithInsertMode is a convenience wrapper that forwards
+	// to WriteFeatures with WithInsertMode(insertMode). Retained for
+	// backward compatibility; new callers should prefer WriteFeatures.
 	WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string)
 
 	WriteFlush()

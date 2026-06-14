@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -30,6 +31,10 @@ type FeatureViewDao interface {
 	RowCountIds(string) ([]string, int, error)
 	ScanAndIterateData(filter string, ch chan<- string) ([]string, error)
 	WriteFeatures(data []map[string]interface{})
+	// WriteFeaturesDirect synchronously writes rows via FeatureDB's
+	// /write_direct endpoint. Only FeatureViewFeatureDBDao implements
+	// this; other DAOs return an error.
+	WriteFeaturesDirect(data []map[string]interface{}) error
 	WriteFlush()
 }
 
@@ -73,6 +78,10 @@ func (d *UnimplementedFeatureViewDao) ScanAndIterateData(filter string, ch chan<
 }
 
 func (d *UnimplementedFeatureViewDao) WriteFeatures(data []map[string]interface{}) {}
+
+func (d *UnimplementedFeatureViewDao) WriteFeaturesDirect(data []map[string]interface{}) error {
+	return errors.New("WriteFeaturesDirect is only supported by FeatureDB-backed feature views")
+}
 
 func (d *UnimplementedFeatureViewDao) WriteFlush() {}
 

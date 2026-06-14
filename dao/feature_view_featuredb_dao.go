@@ -1519,6 +1519,165 @@ func (d *FeatureViewFeatureDBDao) WriteFeatures(data []map[string]interface{}) {
 	d.writeData = append(d.writeData, data...)
 }
 
+// WriteFeaturesDirect writes rows synchronously via the FeatureDB /write_direct
+// API, bypassing the async ticker buffer used by WriteFeatures. The endpoint
+// only accepts KV tables with FullRowWrite semantics; PartialFieldWrite and
+// non-KV feature views are rejected by the server.
+func (d *FeatureViewFeatureDBDao) WriteFeaturesDirect(data []map[string]interface{}) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if d.primaryKeyField == "" {
+		return errors.New("WriteFeaturesDirect requires a primary key field on the feature view")
+	}
+
+	// /write_direct only supports FullRowWrite; strip any caller-injected
+	// __insert_mode__ marker to avoid leaking it into the request body.
+	for _, item := range data {
+		if item != nil {
+			delete(item, "__insert_mode__")
+		}
+	}
+
+	const directBatchSize = 200
+	numBatches := (len(data) + directBatchSize - 1) / directBatchSize
+	for i := 0; i < numBatches; i++ {
+		start := i * directBatchSize
+		end := start + directBatchSize
+		if end > len(data) {
+			end = len(data)
+		}
+		if err := d.writeFeatureDBDirect(data[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeFeatureDBDirect issues a single synchronous POST to /write_direct.
+// On transport failure against the public address it falls back to the VPC
+// address, mirroring the behavior of writeFeatureDB.
+func (d *FeatureViewFeatureDBDao) writeFeatureDBDirect(batch []map[string]interface{}) error {
+	requestBody := map[string]interface{}{
+		"content":    batch,
+		"write_mode": constants.FullRowWrite,
+		"key_field":  d.primaryKeyField,
+	}
+	body, err := json.Marshal(requestBody)
+	if err != nil {
+		return err
+	}
+
+	doRequest := func(useVPC bool) (*http.Response, error) {
+		url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/write_direct",
+			d.featureDBClient.GetCurrentAddress(useVPC), d.database, d.schema, d.table)
+		req, reqErr := http.NewRequest("POST", url, bytes.NewReader(body))
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", d.featureDBClient.Token)
+		req.Header.Set("Auth", d.signature)
+		return d.featureDBClient.Client.Do(req)
+	}
+
+	response, err := doRequest(false)
+	if err != nil {
+		response, err = doRequest(true)
+		if err != nil {
+			return err
+		}
+	}
+	defer response.Body.Close()
+
+	bodyBytes, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		return fmt.Errorf("featuredb write_direct read response failed, StatusCode: %d, error: %v",
+			response.StatusCode, readErr)
+	}
+
+	if response.StatusCode != http.StatusOK {
+		var message string
+		var bodyMap map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
+			if msg, found := bodyMap["message"]; found {
+				message = fmt.Sprintf("%v", msg)
+			}
+		}
+		return fmt.Errorf("featuredb write_direct failed, StatusCode: %d, message: %s",
+			response.StatusCode, message)
+	}
+
+	var resp struct {
+		RequestID string                 `json:"request_id"`
+		Code      string                 `json:"code"`
+		Message   string                 `json:"message"`
+		Data      map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &resp); err != nil {
+		return fmt.Errorf("featuredb write_direct decode response failed: %v, body: %s", err, string(bodyBytes))
+	}
+
+	total := toInt(resp.Data["total_count"])
+	success := toInt(resp.Data["success_count"])
+	failKeys := toStringSlice(resp.Data["fail_keys"])
+	errMsgs := toStringSlice(resp.Data["error_messages"])
+
+	if success < total || len(failKeys) > 0 || len(errMsgs) > 0 {
+		var parts []string
+		parts = append(parts, fmt.Sprintf("success_count=%d/total=%d", success, total))
+		if len(failKeys) > 0 {
+			limit := len(failKeys)
+			if limit > 10 {
+				limit = 10
+			}
+			parts = append(parts, fmt.Sprintf("fail_keys(%d)=[%s]",
+				len(failKeys), strings.Join(failKeys[:limit], ",")))
+		}
+		if len(errMsgs) > 0 {
+			limit := len(errMsgs)
+			if limit > 10 {
+				limit = 10
+			}
+			parts = append(parts, fmt.Sprintf("errors=[%s]", strings.Join(errMsgs[:limit], " | ")))
+		}
+		return fmt.Errorf("featuredb write_direct partial failure: %s", strings.Join(parts, "; "))
+	}
+	return nil
+}
+
+func toInt(v interface{}) int {
+	switch x := v.(type) {
+	case float64:
+		return int(x)
+	case int:
+		return x
+	case int64:
+		return int(x)
+	case json.Number:
+		n, _ := x.Int64()
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func toStringSlice(v interface{}) []string {
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		} else {
+			out = append(out, fmt.Sprintf("%v", item))
+		}
+	}
+	return out
+}
+
 // 实时写入数据
 func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) error {
 	var wg sync.WaitGroup
