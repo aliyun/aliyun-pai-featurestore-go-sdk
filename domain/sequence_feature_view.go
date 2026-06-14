@@ -440,8 +440,11 @@ func (f *SequenceFeatureView) ScanAndIterateData(filter string, ch chan<- string
 	return nil, errors.New("unimplemented")
 }
 
+// WriteFeaturesWithInsertMode preserves the legacy signature. Sequence
+// feature views are always written in full-row mode, so the insertMode
+// argument is intentionally ignored to keep parity with master.
 func (f *SequenceFeatureView) WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string) {
-	_ = f.WriteFeatures(data, WithInsertMode(insertMode))
+	f.featureViewDao.WriteFeatures(data)
 }
 
 func (f *SequenceFeatureView) WriteFlush() {
@@ -453,6 +456,8 @@ func (f *SequenceFeatureView) WriteFlush() {
 // Sequence feature views are KKV-shaped on FeatureDB, so the synchronous
 // /write_direct endpoint (which targets KV tables only) is not supported;
 // passing WithDirect returns an error early without sending the request.
+// Sequence rows are always written in full-row mode, so WithInsertMode is
+// ignored.
 func (f *SequenceFeatureView) WriteFeatures(data []map[string]interface{}, opts ...WriteOption) error {
 	o := resolveWriteOptions(opts)
 	if o.Direct {
@@ -499,14 +504,6 @@ func (f *SequenceFeatureView) WriteFeatures(data []map[string]interface{}, opts 
 			_ = playTimeValue
 		}
 
-	}
-
-	if o.InsertMode != "" {
-		for _, item := range data {
-			if item != nil {
-				item["__insert_mode__"] = o.InsertMode
-			}
-		}
 	}
 
 	f.featureViewDao.WriteFeatures(data)
