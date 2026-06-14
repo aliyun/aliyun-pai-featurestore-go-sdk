@@ -1488,16 +1488,16 @@ func (d *FeatureViewFeatureDBDao) writeFeatureDB(data []map[string]interface{}) 
 		if response.StatusCode != http.StatusOK {
 			bodyBytes, err := io.ReadAll(response.Body)
 			if err != nil {
-				errChan <- err
-				return nil
+				return err
 			}
+			var message string
 			var bodyMap map[string]interface{}
 			if err := json.Unmarshal(bodyBytes, &bodyMap); err == nil {
 				if msg, found := bodyMap["message"]; found {
-					log.Printf("StatusCode: %d, Response message: %s\n", response.StatusCode, msg)
+					message = fmt.Sprintf("%v", msg)
 				}
 			}
-
+			return fmt.Errorf("featuredb write failed, StatusCode: %d, message: %s", response.StatusCode, message)
 		}
 
 		return nil
