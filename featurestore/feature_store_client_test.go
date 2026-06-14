@@ -468,7 +468,7 @@ func TestScanAndIterateData(t *testing.T) {
 }
 
 const (
-	projectName2 = "fs_python_test1013"
+	projectName2 = "fs_demo_featuredb"
 )
 
 func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
@@ -482,7 +482,7 @@ func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	onlineFeatureView := "test0304" //"test_pro1"
+	onlineFeatureView := "user_test_2" //"test_pro1"
 	//onlineFeatureView2 := "complex_features"
 	//offlineFeatureView := "feature_view_users"
 	featureView := project.GetFeatureView(onlineFeatureView)
@@ -493,31 +493,21 @@ func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 	writeData := make([]map[string]interface{}, 0, 10)
 
 	for i := 10; i < 20; i++ {
-		//online featureView
-		int32Seed := rand.Int31()
-		//float64Seed := rand.Float64()
-		float32Seed := rand.Float32()
-		//var boolSeed bool
-		//if i%2 == 0 {
-		//	boolSeed = true
-		//} else {
-		//	boolSeed = false
-		//}
-		record := map[string]interface{}{
-			"a_id": fmt.Sprintf("%d", 185284895+i),
-			//"b":    int64(23201000 + i), // 10 个不同的用户
-			//"c":    float64(i) * float64Seed,
-			//"d":    boolSeed,
-			"e": float32(i) * float32Seed,
-			"f": int32(i) * int32Seed,
-			"g": time.Now().UnixMilli(),
+		var boolSeed bool
+		if i%2 == 0 {
+			boolSeed = true
+		} else {
+			boolSeed = false
 		}
-
-		//offine featureView
-		//record := map[string]interface{}{
-		//	"user_md5":      fmt.Sprintf("%d", 185284895+i),
-		//	"user_nickname": uuid.NewV1().String()[0:8],
-		//}
+		record := map[string]interface{}{
+			"user_id":       int64(185284895 + i),
+			"string_field":  fmt.Sprintf("test_str_%d", i),
+			"int32_field":   int32(i) * rand.Int31n(100),
+			"int64_field":   int64(i) * rand.Int63n(10000),
+			"float_field":   float32(i) * rand.Float32(),
+			"double_field":  float64(i) * rand.Float64(),
+			"boolean_field": boolSeed,
+		}
 
 		writeData = append(writeData, record)
 	}
@@ -528,7 +518,7 @@ func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 
 	time.Sleep(3 * time.Second)
 
-	features, err := featureView.GetOnlineFeatures([]interface{}{"185284905", "185284906", "185284907", "185284908", "185284909"}, []string{"*"}, nil)
+	features, err := featureView.GetOnlineFeatures([]interface{}{int64(185284905), int64(185284906), int64(185284907), int64(185284908), int64(185284909)}, []string{"*"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -537,8 +527,64 @@ func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 		t.Fatal("get online feature none")
 	}
 
+	// build a lookup map from writeData by user_id
+	expectedMap := make(map[int64]map[string]interface{})
+	for _, record := range writeData {
+		expectedMap[record["user_id"].(int64)] = record
+	}
+
 	for _, feature := range features {
 		fmt.Println(feature)
+
+		userID, ok := feature["user_id"]
+		if !ok {
+			t.Fatal("missing user_id field")
+		}
+		uid, ok := userID.(int64)
+		if !ok {
+			t.Fatalf("user_id expected int64, got %T", userID)
+		}
+
+		expected, exists := expectedMap[uid]
+		if !exists {
+			t.Fatalf("unexpected user_id %d in results", uid)
+		}
+
+		if v, ok := feature["string_field"]; ok {
+			if v != expected["string_field"] {
+				t.Fatalf("user_id=%d string_field mismatch: got %v, want %v", uid, v, expected["string_field"])
+			}
+		}
+
+		if v, ok := feature["int32_field"]; ok {
+			if v != expected["int32_field"] {
+				t.Fatalf("user_id=%d int32_field mismatch: got %v, want %v", uid, v, expected["int32_field"])
+			}
+		}
+
+		if v, ok := feature["int64_field"]; ok {
+			if v != expected["int64_field"] {
+				t.Fatalf("user_id=%d int64_field mismatch: got %v, want %v", uid, v, expected["int64_field"])
+			}
+		}
+
+		if v, ok := feature["float_field"]; ok {
+			if v != expected["float_field"] {
+				t.Fatalf("user_id=%d float_field mismatch: got %v, want %v", uid, v, expected["float_field"])
+			}
+		}
+
+		if v, ok := feature["double_field"]; ok {
+			if v != expected["double_field"] {
+				t.Fatalf("user_id=%d double_field mismatch: got %v, want %v", uid, v, expected["double_field"])
+			}
+		}
+
+		if v, ok := feature["boolean_field"]; ok {
+			if v != expected["boolean_field"] {
+				t.Fatalf("user_id=%d boolean_field mismatch: got %v, want %v", uid, v, expected["boolean_field"])
+			}
+		}
 	}
 }
 
