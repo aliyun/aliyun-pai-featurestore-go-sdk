@@ -60,6 +60,7 @@ type FeatureViewFeatureDBDao struct {
 	flushTicker *time.Ticker
 	stopChan    chan struct{}
 	closeOnce   sync.Once
+	closed      bool
 }
 
 func SkipBaseTypeBytes(dataCursor *utils.ByteCursor, fieldType constants.FSType) {
@@ -1365,6 +1366,9 @@ func (d *FeatureViewFeatureDBDao) WriteFlush() {
 		if d.flushTicker != nil {
 			d.flushTicker.Stop()
 		}
+		d.mu.Lock()
+		d.closed = true
+		d.mu.Unlock()
 	})
 
 	// synchronous drain of remaining buffered data
@@ -1413,6 +1417,10 @@ func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
 func (d *FeatureViewFeatureDBDao) WriteFeatures(data []map[string]interface{}) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.closed {
+		log.Printf("WriteFeatures called after WriteFlush, data will be discarded")
+		return
+	}
 	d.writeData = append(d.writeData, data...)
 }
 
