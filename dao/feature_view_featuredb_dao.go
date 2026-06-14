@@ -53,14 +53,13 @@ type FeatureViewFeatureDBDao struct {
 	signature       string
 	primaryKeyField string
 
-	// 新增：异步写入相关
+	// async write fields
 	mu          sync.Mutex
-	cond        *sync.Cond
 	writeData   []map[string]interface{}
-	running     bool
 	batchSize   int
 	flushTicker *time.Ticker
 	stopChan    chan struct{}
+	closeOnce   sync.Once
 }
 
 func SkipBaseTypeBytes(dataCursor *utils.ByteCursor, fieldType constants.FSType) {
@@ -93,7 +92,6 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		fields:          config.Fields,
 		writeData:       make([]map[string]interface{}, 0, 100),
 		batchSize:       20,
-		running:         true,
 		stopChan:        make(chan struct{}),
 	}
 
@@ -104,10 +102,7 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 
 	dao.featureDBClient = client
 
-	// 初始化条件变量
-	dao.cond = sync.NewCond(&dao.mu)
-
-	// 启动后台异步写入协程
+	// start background async write goroutine
 	go dao.startAsyncWrite()
 
 	return &dao
@@ -1364,29 +1359,27 @@ func deserialize(r *bufio.Reader, headerBuf []byte) ([]byte, error) {
 }
 
 func (d *FeatureViewFeatureDBDao) WriteFlush() {
+	// idempotent: stop background writer on first call
+	d.closeOnce.Do(func() {
+		close(d.stopChan)
+		if d.flushTicker != nil {
+			d.flushTicker.Stop()
+		}
+	})
+
+	// synchronous drain of remaining buffered data
 	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	log.Printf("write flush %d", len(d.writeData))
-
-	d.running = false
-	close(d.stopChan)
-
-	// 刷新剩余数据
-	if len(d.writeData) > 0 {
-		dataToWrite := d.writeData
-		d.writeData = make([]map[string]interface{}, 0, 100)
-
-		go func(batch []map[string]interface{}) {
-			if err := d.writeFeatureDB(batch); err != nil {
-				log.Printf("request featuredb error: %s", err.Error())
-			}
-		}(dataToWrite)
+	if len(d.writeData) == 0 {
+		d.mu.Unlock()
+		return
 	}
+	dataToWrite := d.writeData
+	d.writeData = make([]map[string]interface{}, 0, 100)
+	d.mu.Unlock()
 
-	// 等待 ticker 停止
-	if d.flushTicker != nil {
-		d.flushTicker.Stop()
+	log.Printf("write flush %d", len(dataToWrite))
+	if err := d.writeFeatureDB(dataToWrite); err != nil {
+		log.Printf("request featuredb error: %s", err.Error())
 	}
 }
 
@@ -1394,22 +1387,22 @@ func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
 	d.flushTicker = time.NewTicker(50 * time.Millisecond)
 	defer d.flushTicker.Stop()
 
-	for d.running {
+	for {
 		select {
 		case <-d.flushTicker.C:
 			d.mu.Lock()
-			if len(d.writeData) > 0 {
-				dataToWrite := d.writeData
-				d.writeData = make([]map[string]interface{}, 0, 100)
-
-				// 异步提交写入任务
-				go func(batch []map[string]interface{}) {
-					if err := d.writeFeatureDB(batch); err != nil {
-						log.Printf("request featuredb error: %s", err.Error())
-					}
-				}(dataToWrite)
+			if len(d.writeData) == 0 {
+				d.mu.Unlock()
+				continue
 			}
+			dataToWrite := d.writeData
+			d.writeData = make([]map[string]interface{}, 0, 100)
 			d.mu.Unlock()
+
+			// synchronous write to ensure data is persisted before next tick
+			if err := d.writeFeatureDB(dataToWrite); err != nil {
+				log.Printf("request featuredb error: %s", err.Error())
+			}
 
 		case <-d.stopChan:
 			return
@@ -1420,13 +1413,7 @@ func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
 func (d *FeatureViewFeatureDBDao) WriteFeatures(data []map[string]interface{}) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
 	d.writeData = append(d.writeData, data...)
-
-	if len(d.writeData) >= d.batchSize {
-		d.cond.Signal()
-	}
-
 }
 
 // 实时写入数据
