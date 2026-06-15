@@ -12,6 +12,7 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverpb"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/domain"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/ast"
 )
@@ -331,7 +332,7 @@ func TestExpr(t *testing.T) {
 			code:   "name == \"O'Brien\"",
 			expect: "name = 'O''Brien'",
 		},
-		
+
 		{
 			code:   "city in [\"St. John's\", 'London']",
 			expect: "city in ('London', 'St. John''s')",
@@ -520,6 +521,96 @@ func TestScanAndIterateData(t *testing.T) {
 const (
 	projectName2 = "fs_demo_featuredb"
 )
+
+// TestWriteFeaturesToFeatureViewDirect demonstrates synchronous write via
+// /write_direct (FeatureDB-backed feature views only).
+func TestWriteFeaturesToFeatureViewDirect(t *testing.T) {
+	projectName := "fdb_test_case"
+	client, err := createFeatureStoreClient("cn-hangzhou", projectName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	project, err := client.GetProject(projectName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	onlineFeatureView := "batch_test"
+	featureView := project.GetFeatureView(onlineFeatureView)
+	if featureView == nil {
+		t.Fatal("feature view not exist")
+	}
+
+	writeData := make([]map[string]interface{}, 0, 10)
+	cities := []string{"beijing", "shanghai", "hangzhou", "shenzhen", "guangzhou"}
+	for i := 20; i < 22; i++ {
+		record := map[string]interface{}{
+			"user_id":       int64(185284895 + i),
+			"gender":        []string{"male", "female"}[i%2],
+			"age":           int64(18 + i%30),
+			"city":          cities[i%len(cities)],
+			"item_cnt":      int64(i) * rand.Int63n(100),
+			"follow_cnt":    int64(i) * rand.Int63n(50),
+			"follower_cnt":  int64(i) * rand.Int63n(200),
+			"register_time": int64(1700000000 + i*86400),
+			"tags":          fmt.Sprintf("tag_a,tag_b_%d", i),
+		}
+		writeData = append(writeData, record)
+	}
+
+	// WithDirect() triggers synchronous /write_direct; no WriteFlush needed.
+	if err := featureView.WriteFeatures(writeData, domain.WithDirect()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify immediately — direct writes are visible right away.
+	features, err := featureView.GetOnlineFeatures(
+		[]interface{}{int64(185284915), int64(185284916), int64(185284917), int64(185284918), int64(185284919)},
+		[]string{"*"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(features) == 0 {
+		t.Fatal("get online feature none")
+	}
+
+	expectedMap := make(map[int64]map[string]interface{})
+	for _, record := range writeData {
+		expectedMap[record["user_id"].(int64)] = record
+	}
+
+	for _, feature := range features {
+		fmt.Println(feature)
+		userID, ok := feature["user_id"]
+		if !ok {
+			t.Fatal("missing user_id field")
+		}
+		uid, ok := userID.(int64)
+		if !ok {
+			t.Fatalf("user_id expected int64, got %T", userID)
+		}
+		expected, exists := expectedMap[uid]
+		if !exists {
+			t.Fatalf("unexpected user_id %d in results", uid)
+		}
+		if v, ok := feature["gender"]; ok {
+			if v != expected["gender"] {
+				t.Fatalf("user_id=%d gender mismatch: got %v, want %v", uid, v, expected["gender"])
+			}
+		}
+		if v, ok := feature["age"]; ok {
+			if v != expected["age"] {
+				t.Fatalf("user_id=%d age mismatch: got %v, want %v", uid, v, expected["age"])
+			}
+		}
+		if v, ok := feature["city"]; ok {
+			if v != expected["city"] {
+				t.Fatalf("user_id=%d city mismatch: got %v, want %v", uid, v, expected["city"])
+			}
+		}
+	}
+}
 
 func TestWriteFeaturesToFeatureViewAsync(t *testing.T) {
 	client, err := createFeatureStoreClient(region, projectName2)
