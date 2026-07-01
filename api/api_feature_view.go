@@ -141,7 +141,13 @@ func (a *FeatureViewApiService) GetFeatureViewByID(featureViewId string) (GetFea
 				field.IsPrimaryKey = true
 			case "EventTime":
 				field.IsEventTime = true
+			case "SubKey":
+				field.IsSubKey = true
 			}
+		}
+
+		if fieldItem.Dimension != nil {
+			field.Dimension = *fieldItem.Dimension
 		}
 
 		fields = append(fields, &field)

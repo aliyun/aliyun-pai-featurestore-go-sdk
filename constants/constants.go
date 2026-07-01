@@ -43,9 +43,10 @@ const (
 	Datasource_Type_FeatureDB  = "featuredb"
 )
 const (
-	Feature_View_Type_Batch    = "Batch"
-	Feature_View_Type_Stream   = "Stream"
-	Feature_View_Type_Sequence = "Sequence"
+	Feature_View_Type_Batch            = "Batch"
+	Feature_View_Type_Stream           = "Stream"
+	Feature_View_Type_Sequence         = "Sequence"
+	Feature_View_Type_DynamicEmbedding = "DynamicEmbedding"
 )
 
 const (
