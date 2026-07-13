@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/domain"
@@ -102,6 +105,9 @@ type FeatureStoreClient struct {
 	client *api.APIClient
 
 	projectMap map[string]*domain.Project
+
+	llmConfigMap    sync.Map
+	llmConfigLoader singleflight.Group
 
 	// Logger specifies a logger used to report internal changes within the writer
 	Logger Logger
@@ -200,6 +206,55 @@ func (c *FeatureStoreClient) GetProject(name string) (*domain.Project, error) {
 	}
 
 	return nil, fmt.Errorf("not found project, name:%s", name)
+}
+
+func (c *FeatureStoreClient) GetLLMConfig(name string) (*domain.LLMConfig, error) {
+	if value, exists := c.llmConfigMap.Load(name); exists {
+		return value.(*domain.LLMConfig), nil
+	}
+
+	result, err, _ := c.llmConfigLoader.Do(name, func() (interface{}, error) {
+		if value, exists := c.llmConfigMap.Load(name); exists {
+			return value.(*domain.LLMConfig), nil
+		}
+		if err := c.loadLLMConfig(name); err != nil {
+			return nil, err
+		}
+		if value, exists := c.llmConfigMap.Load(name); exists {
+			return value.(*domain.LLMConfig), nil
+		}
+		return nil, fmt.Errorf("llm config not exist, name=%s", name)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result.(*domain.LLMConfig), nil
+}
+
+func (c *FeatureStoreClient) loadLLMConfig(name string) error {
+	pageNumber := 1
+	pageSize := 100
+	for {
+		listResp, err := c.client.LLMConfigApi.ListLLMConfigsByName(pageSize, pageNumber, name)
+		if err != nil {
+			return err
+		}
+		for _, item := range listResp.LLMConfigs {
+			if item.Name != name {
+				continue
+			}
+			c.llmConfigMap.Store(item.Name, domain.NewLLMConfig(item, c.client.GetInstanceId(), c.signature))
+		}
+
+		if len(listResp.LLMConfigs) == 0 || pageSize*pageNumber > listResp.TotalCount {
+			break
+		}
+
+		pageNumber++
+	}
+
+	return nil
 }
 
 func (c *FeatureStoreClient) logError(err error) {
