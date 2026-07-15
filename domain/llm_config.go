@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
@@ -64,6 +65,16 @@ func (l *LLMConfig) CreateMultiModalEmbeddings(ctx context.Context, input []Mult
 	return l.doEmbeddings(ctx, "multi_modal_embeddings", body)
 }
 
+var llmHTTPClient = &http.Client{
+	Timeout: 60 * time.Second,
+	Transport: &http.Transport{
+		MaxConnsPerHost:     1000,
+		MaxIdleConns:        1000,
+		MaxIdleConnsPerHost: 1000,
+		IdleConnTimeout:     90 * time.Second,
+	},
+}
+
 func (l *LLMConfig) doEmbeddings(ctx context.Context, endpoint string, body map[string]interface{}) ([][]float32, error) {
 	fdbClient, err := featuredb.GetFeatureDBClient()
 	if err != nil {
@@ -80,29 +91,17 @@ func (l *LLMConfig) doEmbeddings(ctx context.Context, endpoint string, body map[
 
 	path := fmt.Sprintf("/api/v1/llm_configs/%s/%d/%s", l.instanceId, l.LLMConfigId, endpoint)
 
-	doRequest := func(address string) (*http.Response, error) {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, address+path, bytes.NewReader(reqBody))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fdbClient.Token)
-		req.Header.Set("Auth", l.signature)
-		return fdbClient.Client.Do(req)
-	}
-
-	response, err := doRequest(fdbClient.GetCurrentAddress(false))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fdbClient.GetNormalAddress()+path, bytes.NewReader(reqBody))
 	if err != nil {
-		if response != nil {
-			response.Body.Close()
-		}
-		response, err = doRequest(fdbClient.GetCurrentAddress(true))
-		if err != nil {
-			if response != nil {
-				response.Body.Close()
-			}
-			return nil, err
-		}
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fdbClient.Token)
+	req.Header.Set("Auth", l.signature)
+
+	response, err := llmHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
 	}
 	defer response.Body.Close()
 

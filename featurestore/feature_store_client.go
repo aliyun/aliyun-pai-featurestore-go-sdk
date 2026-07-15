@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/domain"
 )
 
@@ -244,6 +245,9 @@ func (c *FeatureStoreClient) loadLLMConfig(name string) error {
 			if item.Name != name {
 				continue
 			}
+			if err := c.ensureFeatureDBClient(item.WorkspaceId); err != nil {
+				return err
+			}
 			c.llmConfigMap.Store(item.Name, domain.NewLLMConfig(item, c.client.GetInstanceId(), c.signature))
 		}
 
@@ -254,6 +258,18 @@ func (c *FeatureStoreClient) loadLLMConfig(name string) error {
 		pageNumber++
 	}
 
+	return nil
+}
+
+func (c *FeatureStoreClient) ensureFeatureDBClient(workspaceId string) error {
+	if _, err := featuredb.GetFeatureDBClient(); err == nil {
+		return nil
+	}
+	address, token, vpcAddress, err := c.client.DatasourceApi.GetFeatureDBDatasourceInfo(c.testMode, workspaceId)
+	if err != nil {
+		return err
+	}
+	featuredb.InitFeatureDBClient(address, token, vpcAddress, c.testMode)
 	return nil
 }
 
