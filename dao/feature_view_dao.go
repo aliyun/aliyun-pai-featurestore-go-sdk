@@ -36,6 +36,12 @@ type FeatureViewDao interface {
 	// this; other DAOs return an error.
 	WriteFeaturesDirect(data []map[string]interface{}) error
 	WriteFlush()
+
+	// Close releases resources held by the DAO, such as background
+	// goroutines and timers. It is idempotent and safe to call from
+	// multiple goroutines. Implementations that hold no such resources
+	// (see UnimplementedFeatureViewDao) can rely on the default no-op.
+	Close()
 }
 
 type UnimplementedFeatureViewDao struct {
@@ -84,6 +90,8 @@ func (d *UnimplementedFeatureViewDao) WriteFeaturesDirect(data []map[string]inte
 }
 
 func (d *UnimplementedFeatureViewDao) WriteFlush() {}
+
+func (d *UnimplementedFeatureViewDao) Close() {}
 
 func NewFeatureViewDao(config DaoConfig) FeatureViewDao {
 	if config.DatasourceType == constants.Datasource_Type_Hologres {

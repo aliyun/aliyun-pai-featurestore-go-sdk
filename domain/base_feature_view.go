@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/dao"
@@ -344,4 +345,10 @@ func (f *BaseFeatureView) WriteFeaturesWithInsertMode(data []map[string]interfac
 
 func (f *BaseFeatureView) WriteFlush() {
 	f.featureViewDao.WriteFlush()
+}
+
+// Close releases resources held by the underlying DAO, such as the
+// FeatureDB background async-write goroutine.
+func (f *BaseFeatureView) Close() {
+	f.featureViewDao.Close()
 }

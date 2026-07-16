@@ -451,6 +451,12 @@ func (f *SequenceFeatureView) WriteFlush() {
 	f.featureViewDao.WriteFlush()
 }
 
+// Close releases resources held by the underlying DAO, such as the
+// FeatureDB background async-write goroutine.
+func (f *SequenceFeatureView) Close() {
+	f.featureViewDao.Close()
+}
+
 // WriteFeatures persists sequence rows through the underlying DAO.
 //
 // Sequence feature views are KKV-shaped on FeatureDB, so the synchronous
