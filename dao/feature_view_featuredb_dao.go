@@ -66,6 +66,9 @@ type FeatureViewFeatureDBDao struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	closed    bool
+	// started indicates whether the background async-write goroutine has
+	// been lazily started by the first WriteFeatures call. Guarded by mu.
+	started bool
 }
 
 func SkipBaseTypeBytes(dataCursor *utils.ByteCursor, fieldType constants.FSType) {
@@ -100,9 +103,6 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		batchSize:       20,
 		stopChan:        make(chan struct{}),
 		done:            make(chan struct{}),
-		// Create the ticker before starting the goroutine so that stopWriter
-		// can read d.flushTicker without racing the goroutine's startup.
-		flushTicker: time.NewTicker(50 * time.Millisecond),
 	}
 
 	client, err := featuredb.GetFeatureDBClient()
@@ -112,9 +112,8 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 
 	dao.featureDBClient = client
 
-	// start background async write goroutine
-	go dao.startAsyncWrite()
-
+	// The background async-write goroutine is started lazily on the first
+	// WriteFeatures call, so read-only feature views never spawn one.
 	return &dao
 }
 
@@ -1463,24 +1462,33 @@ func deserialize(r *bufio.Reader, headerBuf []byte) ([]byte, error) {
 }
 
 func (d *FeatureViewFeatureDBDao) WriteFlush() {
-	d.stopWriter()
-	// Wait for the background goroutine to finish any in-flight write and
-	// exit before draining, so no data is left mid-flight on return.
-	<-d.done
-	d.drain()
+	d.shutdownAndDrain()
 }
 
-// Close stops the background async-write goroutine, waits for any in-flight
-// write to complete, then drains any remaining buffered rows. It is invoked
-// when a feature view is replaced during a project-data refresh so the
-// background goroutine does not leak across refreshes. Close is idempotent
-// and safe to call concurrently.
+// Close stops the background async-write goroutine (if it was ever started),
+// waits for any in-flight write to complete, then drains any remaining
+// buffered rows. It is invoked when a feature view is replaced during a
+// project-data refresh so the background goroutine does not leak across
+// refreshes. Close is idempotent and safe to call concurrently.
 func (d *FeatureViewFeatureDBDao) Close() {
 	if d == nil {
 		return
 	}
+	d.shutdownAndDrain()
+}
+
+// shutdownAndDrain signals the writer to stop, waits for the background
+// goroutine to exit if it was ever started, then drains any buffered rows.
+func (d *FeatureViewFeatureDBDao) shutdownAndDrain() {
 	d.stopWriter()
-	<-d.done
+	d.mu.Lock()
+	started := d.started
+	d.mu.Unlock()
+	// Only wait for the goroutine when it was actually started; otherwise
+	// done is never closed and the receive would block forever.
+	if started {
+		<-d.done
+	}
 	d.drain()
 }
 
@@ -1490,11 +1498,11 @@ func (d *FeatureViewFeatureDBDao) Close() {
 func (d *FeatureViewFeatureDBDao) stopWriter() {
 	d.closeOnce.Do(func() {
 		close(d.stopChan)
+		d.mu.Lock()
+		d.closed = true
 		if d.flushTicker != nil {
 			d.flushTicker.Stop()
 		}
-		d.mu.Lock()
-		d.closed = true
 		d.mu.Unlock()
 	})
 }
@@ -1553,6 +1561,14 @@ func (d *FeatureViewFeatureDBDao) WriteFeatures(data []map[string]interface{}) {
 		return
 	}
 	d.writeData = append(d.writeData, data...)
+	// Lazily start the background async-write goroutine on the first write so
+	// that read-only feature views never spawn one. The ticker is created here
+	// under mu so stopWriter can read d.flushTicker without a race.
+	if !d.started {
+		d.started = true
+		d.flushTicker = time.NewTicker(50 * time.Millisecond)
+		go d.startAsyncWrite()
+	}
 }
 
 // WriteFeaturesDirect writes rows synchronously via the FeatureDB /write_direct

@@ -7,53 +7,86 @@ import (
 )
 
 // newTestFeatureDBDao builds a FeatureViewFeatureDBDao with only the async
-// write machinery initialized and starts its background goroutine. It avoids
-// the real FeatureDB client so the tests stay hermetic; as long as writeData
-// is empty the background goroutine never issues a network write.
+// write machinery initialized, WITHOUT starting the background goroutine
+// (which is now started lazily on the first WriteFeatures call). It avoids the
+// real FeatureDB client so the tests stay hermetic; as long as writeData is
+// empty the background goroutine never issues a network write.
 func newTestFeatureDBDao() *FeatureViewFeatureDBDao {
-	d := &FeatureViewFeatureDBDao{
-		writeData:   make([]map[string]interface{}, 0, 100),
-		batchSize:   20,
-		stopChan:    make(chan struct{}),
-		done:        make(chan struct{}),
-		flushTicker: time.NewTicker(50 * time.Millisecond),
+	return &FeatureViewFeatureDBDao{
+		writeData: make([]map[string]interface{}, 0, 100),
+		batchSize: 20,
+		stopChan:  make(chan struct{}),
+		done:      make(chan struct{}),
 	}
-	go d.startAsyncWrite()
-	return d
 }
 
-// TestFeatureDBDaoCloseJoinsGoroutine verifies that Close does not return
-// until the background async-write goroutine has fully exited (done closed),
-// which is the core guarantee added to fix the "Close returns while a write
-// is still in flight" defect.
-func TestFeatureDBDaoCloseJoinsGoroutine(t *testing.T) {
+// TestFeatureDBDaoNoGoroutineUntilWrite verifies a DAO that is never written
+// to does not start the background goroutine, and that Close returns promptly
+// without waiting on a goroutine that was never started.
+func TestFeatureDBDaoNoGoroutineUntilWrite(t *testing.T) {
 	d := newTestFeatureDBDao()
-	// let the ticker spin a few times
-	time.Sleep(120 * time.Millisecond)
+
+	d.mu.Lock()
+	started := d.started
+	d.mu.Unlock()
+	if started {
+		t.Fatal("goroutine should not be started before any WriteFeatures call")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		d.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close hung although no background goroutine was started")
+	}
+}
+
+// TestFeatureDBDaoLazyStartAndClose verifies the goroutine is started on the
+// first write and that Close joins it (done closed) on return.
+func TestFeatureDBDaoLazyStartAndClose(t *testing.T) {
+	d := newTestFeatureDBDao()
+
+	// An empty write still starts the goroutine but buffers no rows, so the
+	// ticker never triggers a (networked) flush — keeping the test hermetic.
+	d.WriteFeatures([]map[string]interface{}{})
+
+	d.mu.Lock()
+	started := d.started
+	d.mu.Unlock()
+	if !started {
+		t.Fatal("goroutine should be started after first WriteFeatures call")
+	}
 
 	d.Close()
 
-	// On return the goroutine must already have exited: done is closed.
 	select {
 	case <-d.done:
 	default:
 		t.Fatal("Close returned before the background goroutine exited")
 	}
+}
 
-	// closed flag must be set and further writes discarded.
-	d.mu.Lock()
-	closed := d.closed
-	d.mu.Unlock()
-	if !closed {
-		t.Fatal("expected closed=true after Close")
-	}
+// TestFeatureDBDaoWriteAfterCloseDiscarded verifies writes after Close are
+// discarded and do not start a goroutine.
+func TestFeatureDBDaoWriteAfterCloseDiscarded(t *testing.T) {
+	d := newTestFeatureDBDao()
+	d.Close()
 
 	d.WriteFeatures([]map[string]interface{}{{"id": "x"}})
+
 	d.mu.Lock()
 	buffered := len(d.writeData)
+	started := d.started
 	d.mu.Unlock()
 	if buffered != 0 {
 		t.Fatalf("expected writes after Close to be discarded, got %d buffered", buffered)
+	}
+	if started {
+		t.Fatal("writes after Close must not start the background goroutine")
 	}
 }
 
@@ -62,6 +95,7 @@ func TestFeatureDBDaoCloseJoinsGoroutine(t *testing.T) {
 // or deadlocking.
 func TestFeatureDBDaoCloseIdempotent(t *testing.T) {
 	d := newTestFeatureDBDao()
+	d.WriteFeatures([]map[string]interface{}{}) // start the goroutine
 
 	const callers = 8
 	var wg sync.WaitGroup
@@ -72,33 +106,12 @@ func TestFeatureDBDaoCloseIdempotent(t *testing.T) {
 			d.Close()
 		}()
 	}
-
 	waitTimeout(t, &wg, 2*time.Second, "concurrent Close calls did not all return")
 
 	select {
 	case <-d.done:
 	default:
 		t.Fatal("background goroutine did not exit after concurrent Close")
-	}
-}
-
-// TestFeatureDBDaoWriteFlushThenClose verifies WriteFlush and Close share the
-// same idempotent shutdown path and can be combined without deadlock.
-func TestFeatureDBDaoWriteFlushThenClose(t *testing.T) {
-	d := newTestFeatureDBDao()
-	time.Sleep(60 * time.Millisecond)
-
-	done := make(chan struct{})
-	go func() {
-		d.WriteFlush()
-		d.Close()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("WriteFlush followed by Close deadlocked")
 	}
 }
 
