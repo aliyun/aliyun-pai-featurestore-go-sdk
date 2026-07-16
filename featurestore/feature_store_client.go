@@ -381,7 +381,14 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 	}
 
 	if len(projectData) > 0 {
+		oldProjectMap := c.projectMap
 		c.projectMap = projectData
+		// Release resources held by the previous project map (for example
+		// the FeatureDB async-write goroutines of each feature view) so they
+		// do not leak across refreshes.
+		for _, p := range oldProjectMap {
+			p.Close()
+		}
 	}
 
 	return nil
@@ -524,4 +531,9 @@ func (c *FeatureStoreClient) loopLoadProjectData() {
 
 func (c *FeatureStoreClient) Stop() {
 	close(c.stopChan)
+	// Release resources held by the current project map so the FeatureDB
+	// async-write goroutines of each feature view are stopped on shutdown.
+	for _, p := range c.projectMap {
+		p.Close()
+	}
 }

@@ -93,6 +93,20 @@ func (p *Project) SetApiClient(apiClient *api.APIClient) {
 	p.apiClient = apiClient
 }
 
+// Close releases resources held by all feature views of the project. It is
+// invoked when the project is replaced during a project-data refresh (or on
+// client shutdown) so that per-feature-view background goroutines, such as
+// the FeatureDB async writer, do not leak. Close is safe to call once per
+// project instance.
+func (p *Project) Close() {
+	p.FeatureViewMap.Range(func(_, value interface{}) bool {
+		if fv, ok := value.(FeatureView); ok {
+			fv.Close()
+		}
+		return true
+	})
+}
+
 func (p *Project) GetFeatureView(name string) FeatureView {
 	if value, exists := p.FeatureViewMap.Load(name); exists {
 		return value.(FeatureView)

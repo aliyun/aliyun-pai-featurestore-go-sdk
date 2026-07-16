@@ -1455,7 +1455,23 @@ func deserialize(r *bufio.Reader, headerBuf []byte) ([]byte, error) {
 }
 
 func (d *FeatureViewFeatureDBDao) WriteFlush() {
-	// idempotent: stop background writer on first call
+	d.stopWriter()
+	d.drain()
+}
+
+// Close stops the background async-write goroutine and drains any buffered
+// rows. It is invoked when a feature view is replaced during a project-data
+// refresh so the background goroutine does not leak across refreshes. Close
+// is idempotent and safe to call concurrently.
+func (d *FeatureViewFeatureDBDao) Close() {
+	d.stopWriter()
+	d.drain()
+}
+
+// stopWriter signals the background async-write goroutine to exit and stops
+// its ticker exactly once, regardless of how many times it is called or from
+// how many goroutines.
+func (d *FeatureViewFeatureDBDao) stopWriter() {
 	d.closeOnce.Do(func() {
 		close(d.stopChan)
 		if d.flushTicker != nil {
@@ -1465,8 +1481,10 @@ func (d *FeatureViewFeatureDBDao) WriteFlush() {
 		d.closed = true
 		d.mu.Unlock()
 	})
+}
 
-	// synchronous drain of remaining buffered data
+// drain synchronously writes any buffered rows to FeatureDB.
+func (d *FeatureViewFeatureDBDao) drain() {
 	d.mu.Lock()
 	if len(d.writeData) == 0 {
 		d.mu.Unlock()
