@@ -381,6 +381,12 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 	}
 
 	if len(projectData) > 0 {
+		// flushOldProjects cleans up background goroutines (e.g. FeatureDB DAO's
+		// startAsyncWrite) spawned by FeatureView DAOs in the old projectMap before
+		// it is replaced. Without this call those goroutines leak on every metadata
+		// refresh cycle. Only flush when projectMap will actually be replaced,
+		// otherwise the old DAOs remain in use and must stay alive.
+		c.flushOldProjects()
 		c.projectMap = projectData
 	}
 
@@ -522,6 +528,27 @@ func (c *FeatureStoreClient) loopLoadProjectData() {
 	}
 }
 
+// flushOldProjects iterates over the current projectMap and calls WriteFlush()
+// on every FeatureView. This stops background goroutines (e.g. FeatureDB DAO's
+// startAsyncWrite ticker) that would otherwise leak when projectMap is replaced
+// by a subsequent LoadProjectData/lazyLoadProjectData call.
+//
+// For non-FeatureDB DAOs, WriteFlush() is a no-op (UnimplementedFeatureViewDao),
+// so it is safe to call unconditionally.
+func (c *FeatureStoreClient) flushOldProjects() {
+	for _, project := range c.projectMap {
+		project.FeatureViewMap.Range(func(key, value any) bool {
+			if fv, ok := value.(domain.FeatureView); ok {
+				fv.WriteFlush()
+			}
+			return true
+		})
+	}
+}
+
 func (c *FeatureStoreClient) Stop() {
 	close(c.stopChan)
+	// Flush all FeatureView DAO background goroutines so they don't leak
+	// after the refresh loop has been stopped.
+	c.flushOldProjects()
 }
