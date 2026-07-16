@@ -19,12 +19,16 @@ type FeatureDBClient struct {
 	stopChan      chan struct{}
 }
 
+// featureDBClient is a process-wide singleton. It is accessed concurrently
+// (e.g. GetLLMConfig fans out per-name via singleflight), so it is stored in an
+// atomic.Pointer to make reads lock-free and initialization race-free.
 var (
-	featureDBClient *FeatureDBClient
+	featureDBClient atomic.Pointer[FeatureDBClient]
 )
 
 func InitFeatureDBClient(address, token, vpcAddress string, isTestMode bool) {
-	if featureDBClient != nil {
+	// Fast path: already initialized by a previous caller.
+	if featureDBClient.Load() != nil {
 		return
 	}
 
@@ -48,7 +52,7 @@ func InitFeatureDBClient(address, token, vpcAddress string, isTestMode bool) {
 			IdleConnTimeout:       90 * time.Second,
 		},
 	}
-	featureDBClient = &FeatureDBClient{
+	newClient := &FeatureDBClient{
 		Client:        client,
 		address:       address,
 		Token:         token,
@@ -57,21 +61,29 @@ func InitFeatureDBClient(address, token, vpcAddress string, isTestMode bool) {
 		stopChan:      make(chan struct{}),
 	}
 
-	featureDBClient.useVpcAddress.Store(false)
+	newClient.useVpcAddress.Store(false)
+
+	// Only the first caller wins the swap, guaranteeing the singleton is
+	// initialized once and the background goroutine is started at most once,
+	// even when multiple goroutines call InitFeatureDBClient concurrently.
+	if !featureDBClient.CompareAndSwap(nil, newClient) {
+		return
+	}
 
 	if vpcAddress != "" {
-		featureDBClient.CheckVpcAddress()
+		newClient.CheckVpcAddress()
 
-		go featureDBClient.backgroundCheckVpcAddress()
+		go newClient.backgroundCheckVpcAddress()
 	}
 }
 
 func GetFeatureDBClient() (*FeatureDBClient, error) {
-	if featureDBClient == nil {
+	client := featureDBClient.Load()
+	if client == nil {
 		return nil, fmt.Errorf("FeatureDB has not been provisioned")
 	}
 
-	return featureDBClient, nil
+	return client, nil
 }
 
 func (f *FeatureDBClient) backgroundCheckVpcAddress() {
