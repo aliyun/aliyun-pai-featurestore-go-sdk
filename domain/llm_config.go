@@ -105,7 +105,13 @@ func (l *LLMConfig) doEmbeddings(ctx context.Context, endpoint string, body map[
 	}
 	defer response.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(response.Body)
+	bodyBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body failed (status %d): %w", response.StatusCode, err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("llm embeddings failed, http status: %d, body: %s", response.StatusCode, string(bodyBytes))
+	}
 	var resp struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
@@ -114,7 +120,7 @@ func (l *LLMConfig) doEmbeddings(ctx context.Context, endpoint string, body map[
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(bodyBytes, &resp); err != nil {
-		return nil, fmt.Errorf("decode response failed (status %d): %v", response.StatusCode, err)
+		return nil, fmt.Errorf("decode response failed (status %d, body: %s): %w", response.StatusCode, string(bodyBytes), err)
 	}
 	if resp.Code != "OK" {
 		return nil, fmt.Errorf("llm embeddings failed, code: %s, message: %s", resp.Code, resp.Message)
