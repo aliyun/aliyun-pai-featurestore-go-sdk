@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
@@ -101,7 +102,8 @@ type FeatureStoreClient struct {
 
 	client *api.APIClient
 
-	projectMap map[string]*domain.Project
+	projectMap   map[string]*domain.Project
+	projectMapMu sync.RWMutex
 
 	// Logger specifies a logger used to report internal changes within the writer
 	Logger Logger
@@ -194,6 +196,8 @@ func (e *FeatureStoreClient) Validate() error {
 }
 
 func (c *FeatureStoreClient) GetProject(name string) (*domain.Project, error) {
+	c.projectMapMu.RLock()
+	defer c.projectMapMu.RUnlock()
 	project, ok := c.projectMap[name]
 	if ok {
 		return project, nil
@@ -381,13 +385,10 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 	}
 
 	if len(projectData) > 0 {
-		// flushOldProjects cleans up background goroutines (e.g. FeatureDB DAO's
-		// startAsyncWrite) spawned by FeatureView DAOs in the old projectMap before
-		// it is replaced. Without this call those goroutines leak on every metadata
-		// refresh cycle. Only flush when projectMap will actually be replaced,
-		// otherwise the old DAOs remain in use and must stay alive.
+		c.projectMapMu.Lock()
 		c.flushOldProjects()
 		c.projectMap = projectData
+		c.projectMapMu.Unlock()
 	}
 
 	return nil
@@ -487,7 +488,9 @@ func (c *FeatureStoreClient) lazyLoadProjectData() error {
 	}
 
 	if len(projectData) > 0 {
+		c.projectMapMu.Lock()
 		c.projectMap = projectData
+		c.projectMapMu.Unlock()
 	}
 
 	return nil
@@ -528,13 +531,9 @@ func (c *FeatureStoreClient) loopLoadProjectData() {
 	}
 }
 
-// flushOldProjects iterates over the current projectMap and calls WriteFlush()
-// on every FeatureView. This stops background goroutines (e.g. FeatureDB DAO's
-// startAsyncWrite ticker) that would otherwise leak when projectMap is replaced
-// by a subsequent LoadProjectData/lazyLoadProjectData call.
-//
-// For non-FeatureDB DAOs, WriteFlush() is a no-op (UnimplementedFeatureViewDao),
-// so it is safe to call unconditionally.
+// flushOldProjects calls WriteFlush on all FeatureViews in projectMap,
+// stopping background goroutines before projectMap is replaced.
+// Caller must hold projectMapMu (read or write).
 func (c *FeatureStoreClient) flushOldProjects() {
 	for _, project := range c.projectMap {
 		project.FeatureViewMap.Range(func(key, value any) bool {
@@ -548,7 +547,7 @@ func (c *FeatureStoreClient) flushOldProjects() {
 
 func (c *FeatureStoreClient) Stop() {
 	close(c.stopChan)
-	// Flush all FeatureView DAO background goroutines so they don't leak
-	// after the refresh loop has been stopped.
+	c.projectMapMu.Lock()
 	c.flushOldProjects()
+	c.projectMapMu.Unlock()
 }
