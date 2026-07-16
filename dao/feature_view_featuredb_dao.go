@@ -60,8 +60,12 @@ type FeatureViewFeatureDBDao struct {
 	batchSize   int
 	flushTicker *time.Ticker
 	stopChan    chan struct{}
-	closeOnce   sync.Once
-	closed      bool
+	// done is closed by startAsyncWrite when the background goroutine has
+	// fully exited, allowing Close/WriteFlush to wait for any in-flight
+	// write to complete before returning.
+	done      chan struct{}
+	closeOnce sync.Once
+	closed    bool
 }
 
 func SkipBaseTypeBytes(dataCursor *utils.ByteCursor, fieldType constants.FSType) {
@@ -95,6 +99,10 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		writeData:       make([]map[string]interface{}, 0, 100),
 		batchSize:       20,
 		stopChan:        make(chan struct{}),
+		done:            make(chan struct{}),
+		// Create the ticker before starting the goroutine so that stopWriter
+		// can read d.flushTicker without racing the goroutine's startup.
+		flushTicker: time.NewTicker(50 * time.Millisecond),
 	}
 
 	client, err := featuredb.GetFeatureDBClient()
@@ -1456,15 +1464,23 @@ func deserialize(r *bufio.Reader, headerBuf []byte) ([]byte, error) {
 
 func (d *FeatureViewFeatureDBDao) WriteFlush() {
 	d.stopWriter()
+	// Wait for the background goroutine to finish any in-flight write and
+	// exit before draining, so no data is left mid-flight on return.
+	<-d.done
 	d.drain()
 }
 
-// Close stops the background async-write goroutine and drains any buffered
-// rows. It is invoked when a feature view is replaced during a project-data
-// refresh so the background goroutine does not leak across refreshes. Close
-// is idempotent and safe to call concurrently.
+// Close stops the background async-write goroutine, waits for any in-flight
+// write to complete, then drains any remaining buffered rows. It is invoked
+// when a feature view is replaced during a project-data refresh so the
+// background goroutine does not leak across refreshes. Close is idempotent
+// and safe to call concurrently.
 func (d *FeatureViewFeatureDBDao) Close() {
+	if d == nil {
+		return
+	}
 	d.stopWriter()
+	<-d.done
 	d.drain()
 }
 
@@ -1501,7 +1517,9 @@ func (d *FeatureViewFeatureDBDao) drain() {
 }
 
 func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
-	d.flushTicker = time.NewTicker(50 * time.Millisecond)
+	// Signal Close/WriteFlush waiters once the goroutine has fully exited,
+	// so they can be sure no in-flight write is still running.
+	defer close(d.done)
 	defer d.flushTicker.Stop()
 
 	for {
