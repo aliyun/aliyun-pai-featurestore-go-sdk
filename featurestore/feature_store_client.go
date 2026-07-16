@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
@@ -102,6 +103,10 @@ type FeatureStoreClient struct {
 	client *api.APIClient
 
 	projectMap map[string]*domain.Project
+	// projectMapMu guards concurrent access to projectMap: the background
+	// refresh goroutine replaces the map while request goroutines read it
+	// via GetProject.
+	projectMapMu sync.RWMutex
 
 	// Logger specifies a logger used to report internal changes within the writer
 	Logger Logger
@@ -194,7 +199,9 @@ func (e *FeatureStoreClient) Validate() error {
 }
 
 func (c *FeatureStoreClient) GetProject(name string) (*domain.Project, error) {
+	c.projectMapMu.RLock()
 	project, ok := c.projectMap[name]
+	c.projectMapMu.RUnlock()
 	if ok {
 		return project, nil
 	}
@@ -381,8 +388,15 @@ func (c *FeatureStoreClient) LoadProjectData() error {
 	}
 
 	if len(projectData) > 0 {
+		// Swap in the new map under the lock, then release the previous
+		// projects outside the lock. Close performs a synchronous drain
+		// (possible network I/O), so it must not run while holding
+		// projectMapMu or it would block all concurrent GetProject readers.
+		c.projectMapMu.Lock()
 		oldProjectMap := c.projectMap
 		c.projectMap = projectData
+		c.projectMapMu.Unlock()
+
 		// Release resources held by the previous project map (for example
 		// the FeatureDB async-write goroutines of each feature view) so they
 		// do not leak across refreshes.
@@ -488,7 +502,9 @@ func (c *FeatureStoreClient) lazyLoadProjectData() error {
 	}
 
 	if len(projectData) > 0 {
+		c.projectMapMu.Lock()
 		c.projectMap = projectData
+		c.projectMapMu.Unlock()
 	}
 
 	return nil
@@ -531,9 +547,14 @@ func (c *FeatureStoreClient) loopLoadProjectData() {
 
 func (c *FeatureStoreClient) Stop() {
 	close(c.stopChan)
-	// Release resources held by the current project map so the FeatureDB
-	// async-write goroutines of each feature view are stopped on shutdown.
-	for _, p := range c.projectMap {
+	// Snapshot the current project map under the lock, then release the
+	// projects outside the lock (Close may perform network I/O) so the
+	// FeatureDB async-write goroutines of each feature view are stopped on
+	// shutdown.
+	c.projectMapMu.RLock()
+	projectMap := c.projectMap
+	c.projectMapMu.RUnlock()
+	for _, p := range projectMap {
 		p.Close()
 	}
 }
