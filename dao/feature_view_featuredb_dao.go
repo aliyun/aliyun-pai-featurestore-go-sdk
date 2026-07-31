@@ -26,6 +26,7 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
+	flatbuffers "github.com/google/flatbuffers/go"
 )
 
 const (
@@ -146,6 +147,7 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 		wg.Add(1)
 		go func(ks []interface{}) {
 			defer wg.Done()
+			defer recoverReadPanic(errChan, "GetFeaturesWithContext")
 			var pkeys []string
 			for _, k := range ks {
 				pkeys = append(pkeys, utils.ToString(k, ""))
@@ -222,6 +224,14 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 					} else {
 						errChan <- err
 					}
+					return
+				}
+				if len(buf) == 0 {
+					log.Printf("FeatureDB %s/%s/%s: skip empty block", d.database, d.schema, d.table)
+					continue
+				}
+				if len(buf) < flatbuffers.SizeUOffsetT {
+					errChan <- fmt.Errorf("FeatureDB invalid block size: %d", len(buf))
 					return
 				}
 
@@ -718,6 +728,14 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 				}
 				return nil
 			}
+			if len(buf) == 0 {
+				log.Printf("FeatureDB %s/%s/%s: skip empty block", d.database, d.schema, d.table)
+				continue
+			}
+			if len(buf) < flatbuffers.SizeUOffsetT {
+				errChan <- fmt.Errorf("FeatureDB invalid block size: %d", len(buf))
+				return nil
+			}
 
 			kkvRecordBlock := fdbserverfb.GetRootAsKKVRecordBlock(buf, 0)
 
@@ -846,6 +864,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 		wg.Add(1)
 		go func(key interface{}) {
 			defer wg.Done()
+			defer recoverReadPanic(errChan, "GetUserSequenceFeatureWithContext")
 			properties := make(map[string]interface{})
 			var mu sync.Mutex
 
@@ -859,6 +878,7 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 				eventWg.Add(1)
 				go func(seqEvent string, seqConfigs []*api.SeqConfig, maxLen int, seqConfigsBehaviorFields map[string]struct{}) {
 					defer eventWg.Done()
+					defer recoverReadPanic(errChan, "GetUserSequenceFeatureWithContext")
 
 					// FeatureDB has processed the integration of online sequence features and offline sequence features
 					// Here we put the results into onlineSequences
@@ -1027,6 +1047,14 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ct
 				}
 				return nil
 			}
+			if len(buf) == 0 {
+				log.Printf("FeatureDB %s/%s/%s: skip empty block", d.database, d.schema, d.table)
+				continue
+			}
+			if len(buf) < flatbuffers.SizeUOffsetT {
+				errChan <- fmt.Errorf("FeatureDB invalid block size: %d", len(buf))
+				return nil
+			}
 
 			kkvRecordBlock := fdbserverfb.GetRootAsKKVRecordBlock(buf, 0)
 
@@ -1158,6 +1186,7 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ct
 		eventWg.Add(1)
 		go func(seqEvent string, seqConfigs []*api.SeqConfig, maxLen int, seqConfigsBehaviorFields map[string]struct{}) {
 			defer eventWg.Done()
+			defer recoverReadPanic(errChan, "GetUserAggregatedSequenceFeatureWithContext")
 
 			// FeatureDB has processed the integration of online sequence features and offline sequence features
 			// Here we put the results into onlineSequences
@@ -1335,6 +1364,14 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeatureWithContext(ctx context.
 				}
 				return nil
 			}
+			if len(buf) == 0 {
+				log.Printf("FeatureDB %s/%s/%s: skip empty block", d.database, d.schema, d.table)
+				continue
+			}
+			if len(buf) < flatbuffers.SizeUOffsetT {
+				errChan <- fmt.Errorf("FeatureDB invalid block size: %d", len(buf))
+				return nil
+			}
 			kkvRecordBlock := fdbserverfb.GetRootAsKKVRecordBlock(buf, 0)
 
 			for i := 0; i < kkvRecordBlock.ValuesLength(); i++ {
@@ -1421,6 +1458,7 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeatureWithContext(ctx context.
 		wg.Add(1)
 		go func(userId interface{}) {
 			defer wg.Done()
+			defer recoverReadPanic(errChan, "GetUserBehaviorFeatureWithContext")
 			innerresult := fetchDataFunc(userId)
 			outmu.Lock()
 			results = append(results, innerresult...)
@@ -1441,6 +1479,21 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeatureWithContext(ctx context.
 	}
 
 	return results, nil
+}
+
+// recoverReadPanic reports a panic from a read goroutine as an error.
+func recoverReadPanic(errChan chan error, caller string) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	err := fmt.Errorf("FeatureDB %s error: %v", caller, r)
+	log.Println(err)
+	// errChan holds one error per goroutine, so never block on a full channel
+	select {
+	case errChan <- err:
+	default:
+	}
 }
 
 func deserialize(r *bufio.Reader, headerBuf []byte) ([]byte, error) {
