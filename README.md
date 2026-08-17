@@ -477,3 +477,38 @@ features, err := model_feature.GetOnlineFeaturesWithEntity(map[string][]interfac
 		fmt.Printf("Feature: %v\n", feature)
     }
 ```
+
+## 生成 Embedding
+通过 LLMConfig 生成文本 / 多模态 embedding。初始化 client 时通过 `WithFeatureDBLogin` 提供 FeatureDB 用户名/密码；LLMConfig 与具体 project 无关，`projectName` 可传空字符串。
+
+```
+    client, err := featurestore.NewFeatureStoreClient(regionId, accessId, accessKey, "",
+        featurestore.WithFeatureDBLogin(fdbUser, fdbPassword))
+    if err != nil {
+        // ...
+    }
+
+    // 1. 按名称获取 LLMConfig
+    llm, err := client.GetLLMConfig("my_text_embedding_config")
+    if err != nil {
+        // ...
+    }
+
+    // 2. 文本 embedding（ModelType 为 TEXT_EMBEDDING）
+    vecs, err := llm.CreateTextEmbeddings(context.Background(), []string{"今天天气不错", "featurestore 很好用"})
+    if err != nil {
+        // ...
+    }
+    // vecs 为 [][]float32，每条输入对应一个向量，顺序一致
+
+    // 3. 多模态 embedding（ModelType 为 MULTI_MODAL_EMBEDDING）
+    llmMM, err := client.GetLLMConfig("my_multimodal_config")
+    if err != nil {
+        // ...
+    }
+    vecsMM, err := llmMM.CreateMultiModalEmbeddings(context.Background(), []domain.MultiModalContent{
+        {Text: "一只猫", Image: "https://xxx/cat.jpg"},
+    })
+```
+
+说明：方法需与模型类型匹配——`TEXT_EMBEDDING` 用 `CreateTextEmbeddings`、`MULTI_MODAL_EMBEDDING` 用 `CreateMultiModalEmbeddings`，不匹配会直接返回错误。

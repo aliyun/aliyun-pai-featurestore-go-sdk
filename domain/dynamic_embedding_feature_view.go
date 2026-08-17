@@ -115,5 +115,8 @@ func (f *DynamicEmbeddingFeatureView) WriteFeaturesWithInsertMode(data []map[str
 func (f *DynamicEmbeddingFeatureView) WriteFlush() {
 }
 
+func (f *DynamicEmbeddingFeatureView) Close() {
+}
+
 // compile-time interface check
 var _ FeatureView = (*DynamicEmbeddingFeatureView)(nil)

@@ -46,6 +46,12 @@ type FeatureView interface {
 	WriteFeaturesWithInsertMode(data []map[string]interface{}, insertMode string)
 
 	WriteFlush()
+
+	// Close releases resources held by the feature view (for example the
+	// FeatureDB background async-write goroutine). It is idempotent and is
+	// invoked when the feature view is replaced during a project-data
+	// refresh.
+	Close()
 }
 
 func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) FeatureView {

@@ -60,8 +60,15 @@ type FeatureViewFeatureDBDao struct {
 	batchSize   int
 	flushTicker *time.Ticker
 	stopChan    chan struct{}
-	closeOnce   sync.Once
-	closed      bool
+	// done is closed by startAsyncWrite when the background goroutine has
+	// fully exited, allowing Close/WriteFlush to wait for any in-flight
+	// write to complete before returning.
+	done      chan struct{}
+	closeOnce sync.Once
+	closed    bool
+	// started indicates whether the background async-write goroutine has
+	// been lazily started by the first WriteFeatures call. Guarded by mu.
+	started bool
 }
 
 func SkipBaseTypeBytes(dataCursor *utils.ByteCursor, fieldType constants.FSType) {
@@ -95,6 +102,7 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 		writeData:       make([]map[string]interface{}, 0, 100),
 		batchSize:       20,
 		stopChan:        make(chan struct{}),
+		done:            make(chan struct{}),
 	}
 
 	client, err := featuredb.GetFeatureDBClient()
@@ -104,9 +112,8 @@ func NewFeatureViewFeatureDBDao(config DaoConfig) *FeatureViewFeatureDBDao {
 
 	dao.featureDBClient = client
 
-	// start background async write goroutine
-	go dao.startAsyncWrite()
-
+	// The background async-write goroutine is started lazily on the first
+	// WriteFeatures call, so read-only feature views never spawn one.
 	return &dao
 }
 
@@ -1455,18 +1462,53 @@ func deserialize(r *bufio.Reader, headerBuf []byte) ([]byte, error) {
 }
 
 func (d *FeatureViewFeatureDBDao) WriteFlush() {
-	// idempotent: stop background writer on first call
+	d.shutdownAndDrain()
+}
+
+// Close stops the background async-write goroutine (if it was ever started),
+// waits for any in-flight write to complete, then drains any remaining
+// buffered rows. It is invoked when a feature view is replaced during a
+// project-data refresh so the background goroutine does not leak across
+// refreshes. Close is idempotent and safe to call concurrently.
+func (d *FeatureViewFeatureDBDao) Close() {
+	if d == nil {
+		return
+	}
+	d.shutdownAndDrain()
+}
+
+// shutdownAndDrain signals the writer to stop, waits for the background
+// goroutine to exit if it was ever started, then drains any buffered rows.
+func (d *FeatureViewFeatureDBDao) shutdownAndDrain() {
+	d.stopWriter()
+	d.mu.Lock()
+	started := d.started
+	d.mu.Unlock()
+	// Only wait for the goroutine when it was actually started; otherwise
+	// done is never closed and the receive would block forever.
+	if started {
+		<-d.done
+	}
+	d.drain()
+}
+
+// stopWriter signals the background async-write goroutine to exit and stops
+// its ticker exactly once, regardless of how many times it is called or from
+// how many goroutines.
+func (d *FeatureViewFeatureDBDao) stopWriter() {
 	d.closeOnce.Do(func() {
 		close(d.stopChan)
+		d.mu.Lock()
+		d.closed = true
 		if d.flushTicker != nil {
 			d.flushTicker.Stop()
 		}
-		d.mu.Lock()
-		d.closed = true
 		d.mu.Unlock()
 	})
+}
 
-	// synchronous drain of remaining buffered data
+// drain synchronously writes any buffered rows to FeatureDB.
+func (d *FeatureViewFeatureDBDao) drain() {
 	d.mu.Lock()
 	if len(d.writeData) == 0 {
 		d.mu.Unlock()
@@ -1483,7 +1525,9 @@ func (d *FeatureViewFeatureDBDao) WriteFlush() {
 }
 
 func (d *FeatureViewFeatureDBDao) startAsyncWrite() {
-	d.flushTicker = time.NewTicker(50 * time.Millisecond)
+	// Signal Close/WriteFlush waiters once the goroutine has fully exited,
+	// so they can be sure no in-flight write is still running.
+	defer close(d.done)
 	defer d.flushTicker.Stop()
 
 	for {
@@ -1517,6 +1561,14 @@ func (d *FeatureViewFeatureDBDao) WriteFeatures(data []map[string]interface{}) {
 		return
 	}
 	d.writeData = append(d.writeData, data...)
+	// Lazily start the background async-write goroutine on the first write so
+	// that read-only feature views never spawn one. The ticker is created here
+	// under mu so stopWriter can read d.flushTicker without a race.
+	if !d.started {
+		d.started = true
+		d.flushTicker = time.NewTicker(50 * time.Millisecond)
+		go d.startAsyncWrite()
+	}
 }
 
 // WriteFeaturesDirect writes rows synchronously via the FeatureDB /write_direct

@@ -57,6 +57,8 @@ type APIClient struct {
 	FsModelApi *FsModelApiService
 
 	LabelTableApi *LabelTableApiService
+
+	LLMConfigApi *LLMConfigApiService
 }
 
 type service struct {
@@ -111,12 +113,17 @@ func NewAPIClient(cfg *Configuration) (*APIClient, error) {
 	c.FeatureViewApi = (*FeatureViewApiService)(&c.common)
 	c.FsModelApi = (*FsModelApiService)(&c.common)
 	c.LabelTableApi = (*LabelTableApiService)(&c.common)
+	c.LLMConfigApi = (*LLMConfigApiService)(&c.common)
 
 	return c, nil
 }
 
 func (c *APIClient) GetConfig() *Configuration {
 	return c.cfg
+}
+
+func (c *APIClient) GetInstanceId() string {
+	return c.instanceId
 }
 
 func strlen(s string) int {
