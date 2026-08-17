@@ -129,6 +129,10 @@ func (a *FeatureViewApiService) GetFeatureViewByID(featureViewId string) (GetFea
 			field.Type = constants.FS_MAP_STRING_DOUBLE
 		case "MAP<STRING,STRING>":
 			field.Type = constants.FS_MAP_STRING_STRING
+		case "ARRAY<INT8>":
+			field.Type = constants.FS_ARRAY_INT8
+		case "ARRAY<UINT8>":
+			field.Type = constants.FS_ARRAY_UINT8
 		default:
 			field.Type = constants.FS_STRING
 		}
