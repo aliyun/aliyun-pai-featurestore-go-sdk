@@ -2398,14 +2398,20 @@ func (d *FeatureViewFeatureDBDao) ScanAndIterateData(filter string, ch chan<- st
 					continue
 				}
 				if response.StatusCode != http.StatusOK {
+					response.Body.Close()
 					continue
 				}
 				_ts := utils.ToInt64(response.Header.Get("Next-Ts"), 0)
 				if _ts == 0 {
+					response.Body.Close()
 					continue
 				}
 				ts = _ts
-				reader, _ := ipc.NewReader(response.Body, ipc.WithAllocator(alloc))
+				reader, err := ipc.NewReader(response.Body, ipc.WithAllocator(alloc))
+				if err != nil {
+					response.Body.Close()
+					continue
+				}
 
 				innerReader := readerPool.Get().(*bytes.Reader)
 				for reader.Next() {
