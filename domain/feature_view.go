@@ -57,6 +57,8 @@ type FeatureView interface {
 func NewFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) FeatureView {
 	if view.Type == constants.Feature_View_Type_Sequence {
 		return NewSequenceFeatureView(view, p, entity)
+	} else if view.Type == constants.Feature_View_Type_DynamicEmbedding {
+		return NewDynamicEmbeddingFeatureView(view, p, entity)
 	} else {
 		return NewBaseFeatureView(view, p, entity)
 	}

@@ -31,6 +31,8 @@ const (
 	FS_MAP_STRING_FLOAT
 	FS_MAP_STRING_DOUBLE
 	FS_MAP_STRING_STRING
+	FS_ARRAY_INT8
+	FS_ARRAY_UINT8
 )
 const (
 	Datasource_Type_MaxCompute = "maxcompute"
@@ -43,9 +45,10 @@ const (
 	Datasource_Type_FeatureDB  = "featuredb"
 )
 const (
-	Feature_View_Type_Batch    = "Batch"
-	Feature_View_Type_Stream   = "Stream"
-	Feature_View_Type_Sequence = "Sequence"
+	Feature_View_Type_Batch            = "Batch"
+	Feature_View_Type_Stream           = "Stream"
+	Feature_View_Type_Sequence         = "Sequence"
+	Feature_View_Type_DynamicEmbedding = "DynamicEmbedding"
 )
 
 const (
