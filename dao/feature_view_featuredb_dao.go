@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -227,7 +228,6 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 					return
 				}
 				if len(buf) == 0 {
-					log.Printf("FeatureDB %s/%s/%s: skip empty block", d.database, d.schema, d.table)
 					continue
 				}
 				if len(buf) < flatbuffers.SizeUOffsetT {
@@ -729,7 +729,6 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 				return nil
 			}
 			if len(buf) == 0 {
-				log.Printf("FeatureDB %s/%s/%s: skip empty block", d.database, d.schema, d.table)
 				continue
 			}
 			if len(buf) < flatbuffers.SizeUOffsetT {
@@ -1048,7 +1047,6 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ct
 				return nil
 			}
 			if len(buf) == 0 {
-				log.Printf("FeatureDB %s/%s/%s: skip empty block", d.database, d.schema, d.table)
 				continue
 			}
 			if len(buf) < flatbuffers.SizeUOffsetT {
@@ -1365,7 +1363,6 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeatureWithContext(ctx context.
 				return nil
 			}
 			if len(buf) == 0 {
-				log.Printf("FeatureDB %s/%s/%s: skip empty block", d.database, d.schema, d.table)
 				continue
 			}
 			if len(buf) < flatbuffers.SizeUOffsetT {
@@ -1488,7 +1485,7 @@ func recoverReadPanic(errChan chan error, caller string) {
 		return
 	}
 	err := fmt.Errorf("FeatureDB %s error: %v", caller, r)
-	log.Println(err)
+	log.Printf("%v\n%s", err, debug.Stack())
 	// errChan holds one error per goroutine, so never block on a full channel
 	select {
 	case errChan <- err:
