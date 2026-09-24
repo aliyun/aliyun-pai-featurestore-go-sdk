@@ -27,4 +27,6 @@ type SeqConfig struct {
 	SeqLen                    int      `json:"seq_len"`
 	OnlineSeqName             string   `json:"online_seq_name"`
 	OnlineBehaviorTableFields []string `json:"online_behavior_table_fields"`
+	FilterField               string   `json:"filter_field"`
+	FilterIndex               int      `json:"filter_index"`
 }
