@@ -133,6 +133,8 @@ func (a *FeatureViewApiService) GetFeatureViewByID(featureViewId string) (GetFea
 			field.Type = constants.FS_ARRAY_INT8
 		case "ARRAY<UINT8>":
 			field.Type = constants.FS_ARRAY_UINT8
+		case "BINARY":
+			field.Type = constants.FS_BINARY
 		default:
 			field.Type = constants.FS_STRING
 		}

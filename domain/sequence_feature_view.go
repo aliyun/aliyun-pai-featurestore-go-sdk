@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
@@ -83,6 +85,18 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 			uniqueSeqConfigs = append(uniqueSeqConfigs, seqConfig)
 		}
 		sequenceFeatureView.sequenceConfig.SeqConfig = uniqueSeqConfigs
+	}
+
+	// 过滤字段按名称排序去重后的下标即为 filter_index，未配置过滤字段为 -1
+	filterFieldSet := make(map[string]struct{})
+	for _, sc := range sequenceFeatureView.sequenceConfig.SeqConfig {
+		if sc.FilterField != "" {
+			filterFieldSet[sc.FilterField] = struct{}{}
+		}
+	}
+	sortedFilterFields := slices.Sorted(maps.Keys(filterFieldSet))
+	for _, sc := range sequenceFeatureView.sequenceConfig.SeqConfig {
+		sc.FilterIndex = slices.Index(sortedFilterFields, sc.FilterField)
 	}
 
 	requiredElements1 := []string{"user_id", "item_id", "event"}
@@ -401,6 +415,11 @@ func (f *SequenceFeatureView) GetFeatureEntityName() string {
 
 func (f *SequenceFeatureView) GetType() string {
 	return f.Type
+}
+
+// GetSequenceConfig returns the parsed sequence metadata with derived filter indexes.
+func (f *SequenceFeatureView) GetSequenceConfig() api.FeatureViewSeqConfig {
+	return f.sequenceConfig
 }
 
 func (f *SequenceFeatureView) Offline2Online(input string) string {

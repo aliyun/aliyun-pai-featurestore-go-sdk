@@ -282,6 +282,8 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 									properties[field] = dataCursor.ReadBool()
 								case constants.FS_STRING:
 									properties[field] = dataCursor.ReadString()
+								case constants.FS_BINARY:
+									properties[field] = dataCursor.ReadBytes(int(dataCursor.ReadUint32()))
 								case constants.FS_TIMESTAMP:
 									properties[field] = time.UnixMilli(dataCursor.ReadInt64())
 								case constants.FS_ARRAY_INT32:
@@ -499,6 +501,8 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 								case constants.FS_BOOLEAN:
 									dataCursor.Skip(1)
 								case constants.FS_STRING:
+									dataCursor.Skip(int(dataCursor.ReadUint32()))
+								case constants.FS_BINARY:
 									dataCursor.Skip(int(dataCursor.ReadUint32()))
 								case constants.FS_TIMESTAMP:
 									dataCursor.Skip(8)
@@ -1996,6 +2000,8 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 					properties[field] = cursor.ReadBool()
 				case constants.FS_STRING:
 					properties[field] = cursor.ReadString()
+				case constants.FS_BINARY:
+					properties[field] = cursor.ReadBytes(int(cursor.ReadUint32()))
 				case constants.FS_TIMESTAMP:
 					properties[field] = time.UnixMilli(cursor.ReadInt64())
 				case constants.FS_ARRAY_INT32:
@@ -2214,6 +2220,8 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 					cursor.Skip(1)
 				case constants.FS_STRING:
 					cursor.Skip(int(cursor.ReadUint32()))
+				case constants.FS_BINARY:
+					cursor.Skip(int(cursor.ReadUint32()))
 				case constants.FS_TIMESTAMP:
 					cursor.Skip(8)
 				case constants.FS_ARRAY_INT32:
@@ -2416,6 +2424,12 @@ func (d *FeatureViewFeatureDBDao) ScanAndIterateData(filter string, ch chan<- st
 				strBytes := make([]byte, length)
 				binary.Read(innerReader, binary.LittleEndian, &strBytes)
 				properties[field] = string(strBytes)
+			case constants.FS_BINARY:
+				var length uint32
+				binary.Read(innerReader, binary.LittleEndian, &length)
+				binValue := make([]byte, length)
+				binary.Read(innerReader, binary.LittleEndian, &binValue)
+				properties[field] = binValue
 			case constants.FS_BOOLEAN:
 				var boolValue bool
 				binary.Read(innerReader, binary.LittleEndian, &boolValue)

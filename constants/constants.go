@@ -33,6 +33,7 @@ const (
 	FS_MAP_STRING_STRING
 	FS_ARRAY_INT8
 	FS_ARRAY_UINT8
+	FS_BINARY
 )
 const (
 	Datasource_Type_MaxCompute = "maxcompute"
