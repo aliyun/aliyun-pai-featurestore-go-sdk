@@ -199,8 +199,10 @@ func (t *featureScanTable) scan(ctx context.Context, snapshotId string, fn func(
 	defer reader.Release()
 	for reader.Next() {
 		record := reader.Record()
-		pks := record.Column(0).(*array.String)
-		values := record.Column(1).(*array.Binary)
+		pks, values, err := recordColumns(record)
+		if err != nil {
+			return err
+		}
 		for i := 0; i < int(record.NumRows()); i++ {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -270,8 +272,11 @@ func (t *featureScanTable) iterate(ctx context.Context, ts int64, interval time.
 		var batchErr error
 		for batchErr == nil && reader.Next() {
 			record := reader.Record()
-			pks := record.Column(0).(*array.String)
-			values := record.Column(1).(*array.Binary)
+			pks, values, err := recordColumns(record)
+			if err != nil {
+				batchErr = err
+				break
+			}
 			for i := 0; i < int(record.NumRows()); i++ {
 				if err := ctx.Err(); err != nil {
 					batchErr = err
@@ -311,6 +316,24 @@ func (t *featureScanTable) iterate(ctx context.Context, ts int64, interval time.
 		}
 		ts = nextTs
 	}
+}
+
+// recordColumns returns the primary key and value columns of a FeatureDB scan
+// or iterate record, or an error when the schema is not the expected
+// (string, binary) layout, so an incompatible response never panics.
+func recordColumns(record array.Record) (*array.String, *array.Binary, error) {
+	if record.NumCols() < 2 {
+		return nil, nil, fmt.Errorf("FeatureDB record has %d columns, want at least 2", record.NumCols())
+	}
+	pks, ok := record.Column(0).(*array.String)
+	if !ok {
+		return nil, nil, fmt.Errorf("FeatureDB record column 0 is %s, want string", record.Column(0).DataType())
+	}
+	values, ok := record.Column(1).(*array.Binary)
+	if !ok {
+		return nil, nil, fmt.Errorf("FeatureDB record column 1 is %s, want binary", record.Column(1).DataType())
+	}
+	return pks, values, nil
 }
 
 // decodeFeatureDBRow decodes every field of a FeatureDB F/1 encoded row, using

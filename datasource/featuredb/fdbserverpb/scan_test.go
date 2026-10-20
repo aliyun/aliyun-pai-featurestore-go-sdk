@@ -28,10 +28,22 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/domain"
 )
 
-var (
-	corruptIterateHits    atomic.Int64
-	corruptRetryUsedOldTs atomic.Bool
-)
+// retryTracker records how a table whose first iterate response is broken
+// gets retried.
+type retryTracker struct {
+	hits           atomic.Int64
+	retryUsedOldTs atomic.Bool
+}
+
+// iterateRetryTrackers maps a table name to the broken first iterate response
+// it serves, before falling back to a valid stream.
+var iterateRetryTrackers = map[string]*struct {
+	writeBroken func(io.Writer)
+	tracker     retryTracker
+}{
+	"corrupt-iterate":    {writeBroken: func(w io.Writer) { io.WriteString(w, "invalid arrow stream") }},
+	"bad-schema-iterate": {writeBroken: writeBadSchemaArrowStream},
+}
 
 // TestMain initializes the process-wide FeatureDB client singleton once,
 // pointing it at a fake FeatureDB that serves snapshot, scan and
@@ -51,20 +63,22 @@ func fakeFeatureDBHandler(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/snapshots"):
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"code":"OK","data":{"snapshot_id":"s1","ts":1}}`)
+	case strings.Contains(r.URL.Path, "/bad-schema/") && strings.HasSuffix(r.URL.Path, "/scan"):
+		writeBadSchemaArrowStream(w)
 	case strings.HasSuffix(r.URL.Path, "/scan"):
-		writeFakeArrowStream(w)
-	case strings.Contains(r.URL.Path, "/corrupt-iterate/iterate_get_kv"):
-		w.Header().Set("Next-Ts", "2")
-		if corruptIterateHits.Add(1) == 1 {
-			io.WriteString(w, "invalid arrow stream")
-			return
-		}
-		if r.URL.Query().Get("ts") == "1" {
-			corruptRetryUsedOldTs.Store(true)
-		}
 		writeFakeArrowStream(w)
 	case strings.HasSuffix(r.URL.Path, "/iterate_get_kv"):
 		w.Header().Set("Next-Ts", "2")
+		parts := strings.Split(r.URL.Path, "/")
+		if entry, ok := iterateRetryTrackers[parts[len(parts)-2]]; ok {
+			if entry.tracker.hits.Add(1) == 1 {
+				entry.writeBroken(w)
+				return
+			}
+			if r.URL.Query().Get("ts") == "1" {
+				entry.tracker.retryUsedOldTs.Store(true)
+			}
+		}
 		writeFakeArrowStream(w)
 	default:
 		w.WriteHeader(http.StatusNotFound)
@@ -156,6 +170,25 @@ func writeFakeArrowStream(w io.Writer) {
 		b.Field(0).(*array.StringBuilder).Append(fmt.Sprintf("id_%d", i))
 		b.Field(1).(*array.BinaryBuilder).Append(data)
 	}
+	rec := b.NewRecord()
+	defer rec.Release()
+
+	writer := ipc.NewWriter(w, ipc.WithSchema(schema))
+	writer.Write(rec)
+	writer.Close()
+}
+
+// writeBadSchemaArrowStream writes a record whose value column is a string
+// instead of binary, simulating an incompatible server schema.
+func writeBadSchemaArrowStream(w io.Writer) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "pk", Type: arrow.BinaryTypes.String},
+		{Name: "data", Type: arrow.BinaryTypes.String},
+	}, nil)
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	defer b.Release()
+	b.Field(0).(*array.StringBuilder).Append("id_0")
+	b.Field(1).(*array.StringBuilder).Append("not binary")
 	rec := b.NewRecord()
 	defer rec.Release()
 
@@ -429,39 +462,65 @@ func TestScanAndIterateFeaturesCancelsSnapshot(t *testing.T) {
 	}
 }
 
-// TestScanAndIterateFeaturesRetriesFailedBatchFromSameTS verifies a malformed
-// Arrow response does not advance the incremental cursor and the batch is
-// retried.
-func TestScanAndIterateFeaturesRetriesFailedBatchFromSameTS(t *testing.T) {
-	setShortPollInterval(t)
-	corruptIterateHits.Store(0)
-	corruptRetryUsedOldTs.Store(false)
-
+// TestScanAndIterateFeaturesRejectsBadSchema verifies a scan response whose
+// value column is not binary fails with an error instead of panicking.
+func TestScanAndIterateFeaturesRejectsBadSchema(t *testing.T) {
 	project := newFakeProject()
-	featureView := newFakeFeatureView(project, "corrupt-iterate")
+	featureView := newFakeFeatureView(project, "bad-schema")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var calls atomic.Int64
-	if err := ScanAndIterateFeatures(ctx, project, featureView, func(string, map[string]interface{}) {
-		calls.Add(1)
-	}); err != nil {
-		t.Fatalf("ScanAndIterateFeatures: %v", err)
-	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for calls.Load() <= 3 {
-		if time.Now().After(deadline) {
-			t.Fatal("incremental callback was not invoked after retry")
-		}
-		time.Sleep(5 * time.Millisecond)
+	called := false
+	err := ScanAndIterateFeatures(ctx, project, featureView, func(string, map[string]interface{}) { called = true })
+	if err == nil || !strings.Contains(err.Error(), "want binary") {
+		t.Fatalf("expected schema error, got %v", err)
 	}
-	cancel()
-	waitIterateGoroutineExit(t)
+	if called {
+		t.Fatal("fn must not be called for a bad schema")
+	}
+	if iterateGoroutineAlive() {
+		t.Fatal("iterate goroutine must not start when the scan fails")
+	}
+}
 
-	if corruptIterateHits.Load() < 2 {
-		t.Fatalf("expected at least 2 iterate requests, got %d", corruptIterateHits.Load())
-	}
-	if !corruptRetryUsedOldTs.Load() {
-		t.Fatal("failed iterate batch advanced ts instead of retrying from the old ts")
+// TestScanAndIterateFeaturesRetriesFailedBatchFromSameTS verifies a malformed
+// Arrow response or an unexpected schema does not advance the incremental
+// cursor or panic, and the batch is retried.
+func TestScanAndIterateFeaturesRetriesFailedBatchFromSameTS(t *testing.T) {
+	setShortPollInterval(t)
+	for _, table := range []string{"corrupt-iterate", "bad-schema-iterate"} {
+		t.Run(table, func(t *testing.T) {
+			tracker := &iterateRetryTrackers[table].tracker
+			tracker.hits.Store(0)
+			tracker.retryUsedOldTs.Store(false)
+
+			project := newFakeProject()
+			featureView := newFakeFeatureView(project, table)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var calls atomic.Int64
+			if err := ScanAndIterateFeatures(ctx, project, featureView, func(string, map[string]interface{}) {
+				calls.Add(1)
+			}); err != nil {
+				t.Fatalf("ScanAndIterateFeatures: %v", err)
+			}
+
+			deadline := time.Now().Add(2 * time.Second)
+			for calls.Load() <= 3 {
+				if time.Now().After(deadline) {
+					t.Fatal("incremental callback was not invoked after retry")
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			cancel()
+			waitIterateGoroutineExit(t)
+
+			if tracker.hits.Load() < 2 {
+				t.Fatalf("expected at least 2 iterate requests, got %d", tracker.hits.Load())
+			}
+			if !tracker.retryUsedOldTs.Load() {
+				t.Fatal("failed iterate batch advanced ts instead of retrying from the old ts")
+			}
+		})
 	}
 }
