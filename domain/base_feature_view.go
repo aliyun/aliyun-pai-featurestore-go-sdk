@@ -290,18 +290,6 @@ func (f *BaseFeatureView) ScanAndIterateData(filter string, ch chan<- string) ([
 	return f.featureViewDao.ScanAndIterateData(filter, ch)
 }
 
-// ScanAndIterateFeaturesWithContext scans all rows with their feature values
-// and keeps calling fn with incremental rows until ctx is done. Only FeatureDB
-// supports it.
-func (f *BaseFeatureView) ScanAndIterateFeaturesWithContext(ctx context.Context, fn func(id string, properties map[string]interface{})) error {
-	if d, ok := f.featureViewDao.(interface {
-		ScanAndIterateFeaturesWithContext(ctx context.Context, fn func(id string, properties map[string]interface{})) error
-	}); ok {
-		return d.ScanAndIterateFeaturesWithContext(ctx, fn)
-	}
-	return errors.New("only FeatureDB supports ScanAndIterateFeaturesWithContext")
-}
-
 func (f *BaseFeatureView) WriteFeatureDB(data []map[string]interface{}) {
 	f.featureViewDao.WriteFeatures(data)
 }
