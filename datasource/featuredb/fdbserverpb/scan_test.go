@@ -364,9 +364,8 @@ func TestScanAndIterateFeaturesRejectsInvalidArgs(t *testing.T) {
 	defer stop()
 	noop := func(string, map[string]interface{}) {}
 
-	sequenceView := &fakeFeatureView{FeatureView: featureView, typ: constants.Feature_View_Type_Sequence, writeToFeatureDB: true}
-	dynamicEmbeddingView := &fakeFeatureView{FeatureView: featureView, typ: constants.Feature_View_Type_DynamicEmbedding, writeToFeatureDB: true}
-	notFeatureDBView := &fakeFeatureView{FeatureView: featureView, typ: constants.Feature_View_Type_Batch, writeToFeatureDB: false}
+	sequenceView := &fakeFeatureView{FeatureView: featureView, typ: constants.Feature_View_Type_Sequence}
+	dynamicEmbeddingView := &fakeFeatureView{FeatureView: featureView, typ: constants.Feature_View_Type_DynamicEmbedding}
 
 	cases := []struct {
 		name        string
@@ -383,7 +382,6 @@ func TestScanAndIterateFeaturesRejectsInvalidArgs(t *testing.T) {
 		{"nil feature view", live, project, nil, noop},
 		{"sequence feature view", live, project, sequenceView, noop},
 		{"dynamic embedding feature view", live, project, dynamicEmbeddingView, noop},
-		{"not in FeatureDB", live, project, notFeatureDBView, noop},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -405,16 +403,13 @@ func TestScanAndIterateFeaturesRejectsInvalidArgs(t *testing.T) {
 	}
 }
 
-// fakeFeatureView overrides the type and storage of a real feature view.
+// fakeFeatureView overrides the type of a real feature view.
 type fakeFeatureView struct {
 	domain.FeatureView
-	typ              string
-	writeToFeatureDB bool
+	typ string
 }
 
 func (f *fakeFeatureView) GetType() string { return f.typ }
-
-func (f *fakeFeatureView) GetIsWriteToFeatureDB() bool { return f.writeToFeatureDB }
 
 // TestScanAndIterateFeaturesCancelsSnapshot verifies cancellation interrupts an
 // in-flight snapshot request before scan or iteration starts.

@@ -64,9 +64,6 @@ func ScanAndIterateFeatures(ctx context.Context, project *domain.Project, featur
 	case constants.Feature_View_Type_Sequence, constants.Feature_View_Type_DynamicEmbedding:
 		return fmt.Errorf("feature view type %s does not support ScanAndIterateFeatures", featureView.GetType())
 	}
-	if !featureView.GetIsWriteToFeatureDB() {
-		return fmt.Errorf("feature view %s is not stored in FeatureDB", featureView.GetName())
-	}
 	fdbClient, err := featuredb.GetFeatureDBClient()
 	if err != nil {
 		return err
