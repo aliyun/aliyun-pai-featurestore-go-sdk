@@ -30,10 +30,15 @@ const (
 var iterateFeaturesPollInterval = 1 * time.Second
 
 // ScanAndIterateFeatures scans all rows of a FeatureDB backed feature view and
-// calls fn with the primary key and all feature values of every row. The full
-// scan runs synchronously: fn has been called for every scanned row when it
-// returns nil. It then starts a background goroutine that polls incremental
-// data every second and calls fn for each returned row.
+// calls fn with the primary key and the selected feature values of every row.
+// The full scan runs synchronously: fn has been called for every scanned row
+// when it returns nil. It then starts a background goroutine that polls
+// incremental data every second and calls fn for each returned row.
+//
+// selectFields lists the feature names to return. []string{"*"} returns all
+// features, and an unknown feature name is rejected. Unselected fields are
+// skipped while decoding without allocating their values; the server still
+// returns every field.
 //
 // Lifecycle and concurrency contract:
 //   - ctx must be cancelable. Canceling ctx is the only way to stop the
@@ -45,12 +50,12 @@ var iterateFeaturesPollInterval = 1 * time.Second
 //   - A panic in fn is not recovered and crashes the process.
 //   - The database, table, signature and field definitions are captured at
 //     call time and are not refreshed afterwards.
-//   - properties also holds the primary key under the primary key field name,
-//     null fields are omitted, and a new map is allocated for every call, so
-//     fn may retain it.
+//   - properties always holds the primary key under the primary key field
+//     name, null fields are omitted, and a new map is allocated for every
+//     call, so fn may retain it.
 //   - A failed incremental batch is retried from the same position, so rows of
 //     that batch may not be delivered until a retry succeeds.
-func ScanAndIterateFeatures(ctx context.Context, project *domain.Project, featureView domain.FeatureView, fn func(id string, properties map[string]interface{})) error {
+func ScanAndIterateFeatures(ctx context.Context, project *domain.Project, featureView domain.FeatureView, selectFields []string, fn func(id string, properties map[string]interface{})) error {
 	if ctx == nil || ctx.Done() == nil {
 		return errors.New("ctx must be cancelable")
 	}
@@ -70,6 +75,9 @@ func ScanAndIterateFeatures(ctx context.Context, project *domain.Project, featur
 	}
 
 	t := newFeatureScanTable(fdbClient, project, featureView)
+	if err := t.setSelectFields(selectFields); err != nil {
+		return err
+	}
 	snapshotId, ts, err := t.createSnapshot(ctx)
 	if err != nil {
 		return err
@@ -95,6 +103,8 @@ type featureScanTable struct {
 	// NewBaseFeatureView hands to the FeatureDB DAO.
 	fields     []string
 	fieldTypes map[string]constants.FSType
+	// selected holds the fields to decode, or nil to decode all fields.
+	selected map[string]bool
 }
 
 func newFeatureScanTable(client *featuredb.FeatureDBClient, project *domain.Project, featureView domain.FeatureView) *featureScanTable {
@@ -124,6 +134,41 @@ func newFeatureScanTable(client *featuredb.FeatureDBClient, project *domain.Proj
 		}
 	}
 	return t
+}
+
+// setSelectFields validates selectFields against the encoded fields. "*"
+// selects all fields, and the primary key is always returned so it does not
+// need to be selected.
+func (t *featureScanTable) setSelectFields(selectFields []string) error {
+	selected := make(map[string]bool, len(selectFields))
+	selectAll := false
+	for _, name := range selectFields {
+		if name == "*" {
+			selectAll = true
+			continue
+		}
+		if name == t.primaryKeyField {
+			continue
+		}
+		if !containsField(t.fields, name) {
+			return fmt.Errorf("feature name :%s not found in the featureview fields", name)
+		}
+		selected[name] = true
+	}
+	if selectAll {
+		selected = nil
+	}
+	t.selected = selected
+	return nil
+}
+
+func containsField(fields []string, name string) bool {
+	for _, field := range fields {
+		if field == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *featureScanTable) newRequest(ctx context.Context, method, url string) (*http.Request, error) {
@@ -212,7 +257,7 @@ func (t *featureScanTable) scan(ctx context.Context, snapshotId string, fn func(
 				continue
 			}
 			id := pks.Value(i)
-			properties, err := decodeFeatureDBRow(dataBytes, t.fields, t.fieldTypes)
+			properties, err := decodeFeatureDBRow(dataBytes, t.fields, t.fieldTypes, t.selected)
 			if err != nil {
 				return fmt.Errorf("FeatureDB decode key %s error: %w", id, err)
 			}
@@ -287,7 +332,7 @@ func (t *featureScanTable) iterate(ctx context.Context, ts int64, interval time.
 					continue
 				}
 				id := pks.Value(i)
-				properties, err := decodeFeatureDBRow(dataBytes, t.fields, t.fieldTypes)
+				properties, err := decodeFeatureDBRow(dataBytes, t.fields, t.fieldTypes, t.selected)
 				if err != nil {
 					batchErr = fmt.Errorf("FeatureDB decode key %s error: %w", id, err)
 					break
@@ -336,9 +381,12 @@ func recordColumns(record array.Record) (*array.String, *array.Binary, error) {
 	return pks, values, nil
 }
 
-// decodeFeatureDBRow decodes every field of a FeatureDB F/1 encoded row, using
-// the same value types as GetOnlineFeatures. Null fields are omitted.
-func decodeFeatureDBRow(dataBytes []byte, fields []string, fieldTypes map[string]constants.FSType) (map[string]interface{}, error) {
+// decodeFeatureDBRow decodes the fields of a FeatureDB F/1 encoded row, using
+// the same value types as GetOnlineFeatures. Null fields are omitted. When
+// selected is not nil, only the selected fields are decoded: the others are
+// skipped without allocating, and decoding stops after the last selected
+// field.
+func decodeFeatureDBRow(dataBytes []byte, fields []string, fieldTypes map[string]constants.FSType, selected map[string]bool) (map[string]interface{}, error) {
 	dataCursor := utils.NewByteCursor(dataBytes)
 	protocolVersion := dataCursor.ReadUint8()
 	ifNullFlagVersion := dataCursor.ReadUint8()
@@ -346,12 +394,33 @@ func decodeFeatureDBRow(dataBytes []byte, fields []string, fieldTypes map[string
 		return nil, fmt.Errorf("protocalVersion %v or ifNullFlagVersion %d is not supported", protocolVersion, ifNullFlagVersion)
 	}
 
-	properties := make(map[string]interface{}, len(fields)+1)
+	capacity := len(fields) + 1
+	remaining := -1
+	if selected != nil {
+		capacity = len(selected) + 1
+		remaining = len(selected)
+	}
+	properties := make(map[string]interface{}, capacity)
 	for _, field := range fields {
+		if remaining == 0 {
+			break
+		}
 		isNull, ok := dataCursor.TryReadUint8()
 		if !ok {
 			// EOF
 			break
+		}
+		if selected != nil {
+			if !selected[field] {
+				if isNull != 1 {
+					skipFeatureDBValue(dataCursor, fieldTypes[field])
+					if dataCursor.Err != nil {
+						return nil, fmt.Errorf("field %s: %w", field, dataCursor.Err)
+					}
+				}
+				continue
+			}
+			remaining--
 		}
 		if isNull == 1 {
 			continue
@@ -458,6 +527,77 @@ func decodeFeatureDBRow(dataBytes []byte, fields []string, fieldTypes map[string
 		}
 	}
 	return properties, nil
+}
+
+// skipFeatureDBValue moves the cursor past one non-null value of fsType in
+// the layout read by decodeFeatureDBRow, without allocating it.
+func skipFeatureDBValue(dataCursor *utils.ByteCursor, fsType constants.FSType) {
+	switch fsType {
+	case constants.FS_DOUBLE, constants.FS_INT64, constants.FS_TIMESTAMP:
+		dataCursor.Skip(8)
+	case constants.FS_FLOAT, constants.FS_INT32:
+		dataCursor.Skip(4)
+	case constants.FS_BOOLEAN:
+		dataCursor.Skip(1)
+	case constants.FS_STRING, constants.FS_ARRAY_INT8, constants.FS_ARRAY_UINT8:
+		dataCursor.Skip(int(dataCursor.ReadUint32()))
+	case constants.FS_ARRAY_INT32, constants.FS_ARRAY_FLOAT:
+		dataCursor.Skip(int(dataCursor.ReadUint32()) * 4)
+	case constants.FS_ARRAY_INT64, constants.FS_ARRAY_DOUBLE:
+		dataCursor.Skip(int(dataCursor.ReadUint32()) * 8)
+	case constants.FS_ARRAY_ARRAY_FLOAT:
+		outerLength := dataCursor.ReadUint32()
+		if outerLength == 0 {
+			return
+		}
+		totalElements := dataCursor.ReadUint32()
+		if totalElements == 0 {
+			return
+		}
+		dataCursor.Skip(int(outerLength) * 4)
+		dataCursor.Skip(int(totalElements) * 4)
+	default:
+		if sizes, ok := mapElementSizes[fsType]; ok {
+			length := dataCursor.ReadUint32()
+			if length == 0 {
+				return
+			}
+			skipElements(dataCursor, length, sizes[0])
+			skipElements(dataCursor, length, sizes[1])
+			return
+		}
+		dataCursor.SkipStringArray(dataCursor.ReadUint32())
+	}
+}
+
+// mapElementSizes holds the key and value element sizes in bytes of every map
+// type, where 0 stands for a string array.
+var mapElementSizes = map[constants.FSType][2]int{
+	constants.FS_MAP_INT32_INT32:   {4, 4},
+	constants.FS_MAP_INT32_INT64:   {4, 8},
+	constants.FS_MAP_INT32_FLOAT:   {4, 4},
+	constants.FS_MAP_INT32_DOUBLE:  {4, 8},
+	constants.FS_MAP_INT32_STRING:  {4, 0},
+	constants.FS_MAP_INT64_INT32:   {8, 4},
+	constants.FS_MAP_INT64_INT64:   {8, 8},
+	constants.FS_MAP_INT64_FLOAT:   {8, 4},
+	constants.FS_MAP_INT64_DOUBLE:  {8, 8},
+	constants.FS_MAP_INT64_STRING:  {8, 0},
+	constants.FS_MAP_STRING_INT32:  {0, 4},
+	constants.FS_MAP_STRING_INT64:  {0, 8},
+	constants.FS_MAP_STRING_FLOAT:  {0, 4},
+	constants.FS_MAP_STRING_DOUBLE: {0, 8},
+	constants.FS_MAP_STRING_STRING: {0, 0},
+}
+
+// skipElements skips count fixed size elements, or a string array of count
+// elements when size is 0.
+func skipElements(dataCursor *utils.ByteCursor, count uint32, size int) {
+	if size == 0 {
+		dataCursor.SkipStringArray(count)
+		return
+	}
+	dataCursor.Skip(int(count) * size)
 }
 
 // readMap reads a length followed by the key array and the value array.

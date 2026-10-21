@@ -26,6 +26,7 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/domain"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 )
 
 // retryTracker records how a table whose first iterate response is broken
@@ -247,7 +248,7 @@ func TestDecodeFeatureDBRow(t *testing.T) {
 	scanTable := newFeatureScanTable(nil, project, newFakeFeatureView(project, "table"))
 	data := encodeFakeRow()
 
-	got, err := decodeFeatureDBRow(data, scanTable.fields, scanTable.fieldTypes)
+	got, err := decodeFeatureDBRow(data, scanTable.fields, scanTable.fieldTypes, nil)
 	if err != nil {
 		t.Fatalf("decodeFeatureDBRow: %v", err)
 	}
@@ -255,12 +256,244 @@ func TestDecodeFeatureDBRow(t *testing.T) {
 		t.Fatalf("decodeFeatureDBRow = %#v, want %#v", got, fakeRowWant)
 	}
 
-	if _, err := decodeFeatureDBRow(data[:len(data)-2], scanTable.fields, scanTable.fieldTypes); err == nil {
+	if _, err := decodeFeatureDBRow(data[:len(data)-2], scanTable.fields, scanTable.fieldTypes, nil); err == nil {
 		t.Fatal("expected error for truncated data")
 	}
 	bad := append([]byte{'X', '1'}, data[2:]...)
-	if _, err := decodeFeatureDBRow(bad, scanTable.fields, scanTable.fieldTypes); err == nil {
+	if _, err := decodeFeatureDBRow(bad, scanTable.fields, scanTable.fieldTypes, nil); err == nil {
 		t.Fatal("expected error for unsupported protocol version")
+	}
+}
+
+// TestDecodeFeatureDBRowSelected verifies only selected fields are returned,
+// null selected fields are still omitted, and decoding stops after the last
+// selected field.
+func TestDecodeFeatureDBRowSelected(t *testing.T) {
+	project := newFakeProject()
+	scanTable := newFeatureScanTable(nil, project, newFakeFeatureView(project, "table"))
+	data := encodeFakeRow()
+
+	cases := []struct {
+		name     string
+		selected map[string]bool
+		want     map[string]interface{}
+	}{
+		{"none", map[string]bool{}, map[string]interface{}{}},
+		{"first", map[string]bool{"v": true}, map[string]interface{}{"v": int64(1)}},
+		{"null and last", map[string]bool{"n": true, "u8": true}, map[string]interface{}{"u8": []uint8{1, 255}}},
+		{"after map", map[string]bool{"s": true, "i8": true}, map[string]interface{}{"s": "hello", "i8": []int8{-1, 2}}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := decodeFeatureDBRow(data, scanTable.fields, scanTable.fieldTypes, c.selected)
+			if err != nil {
+				t.Fatalf("decodeFeatureDBRow: %v", err)
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Fatalf("decodeFeatureDBRow = %#v, want %#v", got, c.want)
+			}
+		})
+	}
+
+	// Fields after the last selected one are not read, so a truncated tail
+	// does not matter, while a truncated skipped field does.
+	if _, err := decodeFeatureDBRow(data[:len(data)-2], scanTable.fields, scanTable.fieldTypes, map[string]bool{"v": true}); err != nil {
+		t.Fatalf("expected no error when the truncated tail is not selected, got %v", err)
+	}
+	if _, err := decodeFeatureDBRow(data[:len(data)-2], scanTable.fields, scanTable.fieldTypes, map[string]bool{"u8": true}); err == nil {
+		t.Fatal("expected error for truncated data")
+	}
+}
+
+// valueWriter encodes FeatureDB F/1 values in little endian.
+type valueWriter struct{ bytes.Buffer }
+
+func (w *valueWriter) put(v interface{}) { binary.Write(&w.Buffer, binary.LittleEndian, v) }
+
+// strs writes a string array: count+1 offsets followed by the bytes.
+func (w *valueWriter) strs(values ...string) {
+	offset := uint32(0)
+	w.put(offset)
+	for _, v := range values {
+		offset += uint32(len(v))
+		w.put(offset)
+	}
+	for _, v := range values {
+		w.WriteString(v)
+	}
+}
+
+// skipValueCase is one non-null encoded value of fsType.
+type skipValueCase struct {
+	name   string
+	fsType constants.FSType
+	write  func(w *valueWriter)
+}
+
+// skipValueCases encodes one non-null value of every supported type, plus an
+// unknown type that falls back to a string array.
+func skipValueCases() []skipValueCase {
+	arrays := map[string]func(w *valueWriter){
+		"int32":  func(w *valueWriter) { w.put([]int32{1, -2}) },
+		"int64":  func(w *valueWriter) { w.put([]int64{3, -4}) },
+		"float":  func(w *valueWriter) { w.put([]float32{1.5, 2.5}) },
+		"double": func(w *valueWriter) { w.put([]float64{3.5, 4.5}) },
+		"string": func(w *valueWriter) { w.strs("a", "bc") },
+	}
+	mapOf := func(key, value string) func(w *valueWriter) {
+		return func(w *valueWriter) {
+			w.put(uint32(2))
+			arrays[key](w)
+			arrays[value](w)
+		}
+	}
+	arrayOf := func(kind string) func(w *valueWriter) {
+		return func(w *valueWriter) {
+			w.put(uint32(2))
+			arrays[kind](w)
+		}
+	}
+	return []skipValueCase{
+		{"int32", constants.FS_INT32, func(w *valueWriter) { w.put(int32(-3)) }},
+		{"int64", constants.FS_INT64, func(w *valueWriter) { w.put(int64(5)) }},
+		{"float", constants.FS_FLOAT, func(w *valueWriter) { w.put(float32(1.5)) }},
+		{"double", constants.FS_DOUBLE, func(w *valueWriter) { w.put(2.5) }},
+		{"string", constants.FS_STRING, func(w *valueWriter) { w.put(uint32(3)); w.WriteString("abc") }},
+		{"boolean", constants.FS_BOOLEAN, func(w *valueWriter) { w.WriteByte(1) }},
+		{"timestamp", constants.FS_TIMESTAMP, func(w *valueWriter) { w.put(int64(1700000000000)) }},
+		{"array int32", constants.FS_ARRAY_INT32, arrayOf("int32")},
+		{"array int64", constants.FS_ARRAY_INT64, arrayOf("int64")},
+		{"array float", constants.FS_ARRAY_FLOAT, arrayOf("float")},
+		{"array double", constants.FS_ARRAY_DOUBLE, arrayOf("double")},
+		{"array string", constants.FS_ARRAY_STRING, arrayOf("string")},
+		{"array int8", constants.FS_ARRAY_INT8, func(w *valueWriter) { w.put(uint32(2)); w.Write([]byte{0xff, 1}) }},
+		{"array uint8", constants.FS_ARRAY_UINT8, func(w *valueWriter) { w.put(uint32(2)); w.Write([]byte{1, 0xff}) }},
+		{"array array float", constants.FS_ARRAY_ARRAY_FLOAT, func(w *valueWriter) {
+			w.put(uint32(2))
+			w.put(uint32(3))
+			w.put([]uint32{1, 2})
+			w.put([]float32{1, 2, 3})
+		}},
+		{"array array float empty outer", constants.FS_ARRAY_ARRAY_FLOAT, func(w *valueWriter) { w.put(uint32(0)) }},
+		{"array array float empty inner", constants.FS_ARRAY_ARRAY_FLOAT, func(w *valueWriter) { w.put(uint32(2)); w.put(uint32(0)) }},
+		{"map int32 int32", constants.FS_MAP_INT32_INT32, mapOf("int32", "int32")},
+		{"map int32 int64", constants.FS_MAP_INT32_INT64, mapOf("int32", "int64")},
+		{"map int32 float", constants.FS_MAP_INT32_FLOAT, mapOf("int32", "float")},
+		{"map int32 double", constants.FS_MAP_INT32_DOUBLE, mapOf("int32", "double")},
+		{"map int32 string", constants.FS_MAP_INT32_STRING, mapOf("int32", "string")},
+		{"map int64 int32", constants.FS_MAP_INT64_INT32, mapOf("int64", "int32")},
+		{"map int64 int64", constants.FS_MAP_INT64_INT64, mapOf("int64", "int64")},
+		{"map int64 float", constants.FS_MAP_INT64_FLOAT, mapOf("int64", "float")},
+		{"map int64 double", constants.FS_MAP_INT64_DOUBLE, mapOf("int64", "double")},
+		{"map int64 string", constants.FS_MAP_INT64_STRING, mapOf("int64", "string")},
+		{"map string int32", constants.FS_MAP_STRING_INT32, mapOf("string", "int32")},
+		{"map string int64", constants.FS_MAP_STRING_INT64, mapOf("string", "int64")},
+		{"map string float", constants.FS_MAP_STRING_FLOAT, mapOf("string", "float")},
+		{"map string double", constants.FS_MAP_STRING_DOUBLE, mapOf("string", "double")},
+		{"map string string", constants.FS_MAP_STRING_STRING, mapOf("string", "string")},
+		{"empty map", constants.FS_MAP_STRING_STRING, func(w *valueWriter) { w.put(uint32(0)) }},
+		{"unknown type", constants.FSType(999), func(w *valueWriter) { w.put(uint32(1)); w.strs("x") }},
+	}
+}
+
+// TestSkipFeatureDBValue verifies, for every type, skipping a value consumes
+// exactly the bytes the decoder reads, allocates nothing, and fails on
+// truncated data.
+func TestSkipFeatureDBValue(t *testing.T) {
+	fields := []string{"f", "z"}
+	for _, c := range skipValueCases() {
+		t.Run(c.name, func(t *testing.T) {
+			var value valueWriter
+			c.write(&value)
+			var row valueWriter
+			row.WriteByte(featureDBProtocolVersionF)
+			row.WriteByte(featureDBIfNullFlagVersion1)
+			row.WriteByte(0)
+			row.Write(value.Bytes())
+			row.WriteByte(0)
+			row.put(int64(42))
+			data := row.Bytes()
+			fieldTypes := map[string]constants.FSType{"f": c.fsType, "z": constants.FS_INT64}
+
+			all, err := decodeFeatureDBRow(data, fields, fieldTypes, nil)
+			if err != nil {
+				t.Fatalf("decode all: %v", err)
+			}
+			if all["z"] != int64(42) {
+				t.Fatalf("decode all z = %#v, want 42", all["z"])
+			}
+			got, err := decodeFeatureDBRow(data, fields, fieldTypes, map[string]bool{"z": true})
+			if err != nil {
+				t.Fatalf("decode z: %v", err)
+			}
+			if want := map[string]interface{}{"z": int64(42)}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("decode z = %#v, want %#v", got, want)
+			}
+			got, err = decodeFeatureDBRow(data, fields, fieldTypes, map[string]bool{"f": true})
+			if err != nil {
+				t.Fatalf("decode f: %v", err)
+			}
+			if want := map[string]interface{}{"f": all["f"]}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("decode f = %#v, want %#v", got, want)
+			}
+
+			encoded := value.Bytes()
+			cursor := utils.NewByteCursor(encoded)
+			if allocs := testing.AllocsPerRun(100, func() {
+				cursor.Off, cursor.Err = 0, nil
+				skipFeatureDBValue(cursor, c.fsType)
+			}); allocs != 0 {
+				t.Fatalf("skipFeatureDBValue allocated %v times, want 0", allocs)
+			}
+			if cursor.Err != nil || cursor.Off != len(encoded) {
+				t.Fatalf("skipFeatureDBValue stopped at %d of %d, err %v", cursor.Off, len(encoded), cursor.Err)
+			}
+
+			truncated := utils.NewByteCursor(encoded[:len(encoded)-1])
+			skipFeatureDBValue(truncated, c.fsType)
+			if truncated.Err == nil {
+				t.Fatal("expected error for truncated value")
+			}
+		})
+	}
+}
+
+// TestSetSelectFields verifies "*" selects all fields, the primary key needs
+// no selection, and fields that are not encoded are rejected.
+func TestSetSelectFields(t *testing.T) {
+	project := newFakeProject()
+	cases := []struct {
+		name         string
+		selectFields []string
+		want         map[string]bool
+		wantErr      bool
+	}{
+		{"star", []string{"*"}, nil, false},
+		{"star with others", []string{"v", "*"}, nil, false},
+		{"empty", nil, map[string]bool{}, false},
+		{"subset with primary key and duplicate", []string{"pk", "s", "et", "s"}, map[string]bool{"s": true, "et": true}, false},
+		{"unknown", []string{"s", "missing"}, nil, true},
+		{"unknown after star", []string{"*", "missing"}, nil, true},
+		{"unknown before star", []string{"missing", "*"}, nil, true},
+		{"partition", []string{"p"}, nil, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			scanTable := newFeatureScanTable(nil, project, newFakeFeatureView(project, "table"))
+			err := scanTable.setSelectFields(c.selectFields)
+			if c.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("setSelectFields: %v", err)
+			}
+			if !reflect.DeepEqual(scanTable.selected, c.want) {
+				t.Fatalf("selected = %#v, want %#v", scanTable.selected, c.want)
+			}
+		})
 	}
 }
 
@@ -330,7 +563,7 @@ func TestScanAndIterateFeatures(t *testing.T) {
 
 	var mu sync.Mutex
 	var calls []map[string]interface{}
-	err := ScanAndIterateFeatures(ctx, project, featureView, func(id string, properties map[string]interface{}) {
+	err := ScanAndIterateFeatures(ctx, project, featureView, []string{"*"}, func(id string, properties map[string]interface{}) {
 		mu.Lock()
 		calls = append(calls, properties)
 		mu.Unlock()
@@ -385,6 +618,51 @@ func TestScanAndIterateFeatures(t *testing.T) {
 	}
 }
 
+// TestScanAndIterateFeaturesSelectFields verifies both scanned and
+// incremental rows only carry the primary key and the selected fields.
+func TestScanAndIterateFeaturesSelectFields(t *testing.T) {
+	setShortPollInterval(t)
+	project := newFakeProject()
+	featureView := newFakeFeatureView(project, "table")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var mu sync.Mutex
+	var calls []map[string]interface{}
+	if err := ScanAndIterateFeatures(ctx, project, featureView, []string{"s", "u8"}, func(id string, properties map[string]interface{}) {
+		mu.Lock()
+		calls = append(calls, properties)
+		mu.Unlock()
+	}); err != nil {
+		t.Fatalf("ScanAndIterateFeatures: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		n := len(calls)
+		mu.Unlock()
+		if n > 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fn was never called with incremental rows")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	waitIterateGoroutineExit(t)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for i, properties := range calls {
+		want := map[string]interface{}{"pk": fmt.Sprintf("id_%d", i%3), "s": "hello", "u8": []uint8{1, 255}}
+		if !reflect.DeepEqual(properties, want) {
+			t.Fatalf("row %d = %#v, want %#v", i, properties, want)
+		}
+	}
+}
+
 // TestScanAndIterateFeaturesRejectsInvalidArgs verifies invalid arguments,
 // including contexts that can never be canceled, fail fast without calling fn
 // or starting the iterate goroutine.
@@ -396,25 +674,28 @@ func TestScanAndIterateFeaturesRejectsInvalidArgs(t *testing.T) {
 	live, stop := context.WithCancel(context.Background())
 	defer stop()
 	noop := func(string, map[string]interface{}) {}
+	all := []string{"*"}
 
 	sequenceView := &fakeFeatureView{FeatureView: featureView, typ: constants.Feature_View_Type_Sequence}
 	dynamicEmbeddingView := &fakeFeatureView{FeatureView: featureView, typ: constants.Feature_View_Type_DynamicEmbedding}
 
 	cases := []struct {
-		name        string
-		ctx         context.Context
-		project     *domain.Project
-		featureView domain.FeatureView
-		fn          func(string, map[string]interface{})
+		name         string
+		ctx          context.Context
+		project      *domain.Project
+		featureView  domain.FeatureView
+		selectFields []string
+		fn           func(string, map[string]interface{})
 	}{
-		{"nil ctx", nil, project, featureView, noop},
-		{"background ctx", context.Background(), project, featureView, noop},
-		{"canceled ctx", canceled, project, featureView, noop},
-		{"nil fn", live, project, featureView, nil},
-		{"nil project", live, nil, featureView, noop},
-		{"nil feature view", live, project, nil, noop},
-		{"sequence feature view", live, project, sequenceView, noop},
-		{"dynamic embedding feature view", live, project, dynamicEmbeddingView, noop},
+		{"nil ctx", nil, project, featureView, all, noop},
+		{"background ctx", context.Background(), project, featureView, all, noop},
+		{"canceled ctx", canceled, project, featureView, all, noop},
+		{"nil fn", live, project, featureView, all, nil},
+		{"nil project", live, nil, featureView, all, noop},
+		{"nil feature view", live, project, nil, all, noop},
+		{"sequence feature view", live, project, sequenceView, all, noop},
+		{"dynamic embedding feature view", live, project, dynamicEmbeddingView, all, noop},
+		{"unknown select field", live, project, featureView, []string{"missing"}, noop},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -423,7 +704,7 @@ func TestScanAndIterateFeaturesRejectsInvalidArgs(t *testing.T) {
 			if fn != nil {
 				fn = func(string, map[string]interface{}) { called = true }
 			}
-			if err := ScanAndIterateFeatures(c.ctx, c.project, c.featureView, fn); err == nil {
+			if err := ScanAndIterateFeatures(c.ctx, c.project, c.featureView, c.selectFields, fn); err == nil {
 				t.Fatal("expected error")
 			}
 			if called {
@@ -453,7 +734,7 @@ func TestScanAndIterateFeaturesCancelsSnapshot(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	err := ScanAndIterateFeatures(ctx, project, featureView, func(string, map[string]interface{}) {})
+	err := ScanAndIterateFeatures(ctx, project, featureView, []string{"*"}, func(string, map[string]interface{}) {})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected context deadline exceeded, got %v", err)
 	}
@@ -471,7 +752,7 @@ func TestScanAndIterateFeaturesRejectsBadSchema(t *testing.T) {
 	defer cancel()
 
 	called := false
-	err := ScanAndIterateFeatures(ctx, project, featureView, func(string, map[string]interface{}) { called = true })
+	err := ScanAndIterateFeatures(ctx, project, featureView, []string{"*"}, func(string, map[string]interface{}) { called = true })
 	if err == nil || !strings.Contains(err.Error(), "want binary") {
 		t.Fatalf("expected schema error, got %v", err)
 	}
@@ -499,7 +780,7 @@ func TestScanAndIterateFeaturesRetriesFailedBatchFromSameTS(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			var calls atomic.Int64
-			if err := ScanAndIterateFeatures(ctx, project, featureView, func(string, map[string]interface{}) {
+			if err := ScanAndIterateFeatures(ctx, project, featureView, []string{"*"}, func(string, map[string]interface{}) {
 				calls.Add(1)
 			}); err != nil {
 				t.Fatalf("ScanAndIterateFeatures: %v", err)
