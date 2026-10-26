@@ -1,18 +1,18 @@
 package featuredb
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
-// TestInitFeatureDBClientConcurrent verifies that concurrent calls to
-// InitFeatureDBClient and GetFeatureDBClient are race-free and that the
-// singleton is initialized exactly once. Run with -race to catch data races on
-// the package-level singleton.
-//
-// vpcAddress is left empty on purpose so no background goroutine or HTTP health
-// check is started, keeping the test hermetic.
 func TestInitFeatureDBClientConcurrent(t *testing.T) {
+	resetFeatureDBClientForTest(t)
 	const goroutines = 64
 
 	var wg sync.WaitGroup
@@ -25,7 +25,6 @@ func TestInitFeatureDBClientConcurrent(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			// Concurrent reads must never race with the initializing write.
 			_, _ = GetFeatureDBClient()
 		}()
 	}
@@ -46,7 +45,6 @@ func TestInitFeatureDBClientConcurrent(t *testing.T) {
 		t.Fatalf("unexpected token: %q", client.Token)
 	}
 
-	// A second Init with different args must be ignored (first caller wins).
 	InitFeatureDBClient("other.example.com", "other-token", "", true)
 	client2, err := GetFeatureDBClient()
 	if err != nil {
@@ -55,4 +53,104 @@ func TestInitFeatureDBClientConcurrent(t *testing.T) {
 	if client2 != client {
 		t.Fatal("expected singleton to remain the first initialized client")
 	}
+}
+
+func TestFeatureDBAddressSelection(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statuses   []int
+		incomplete bool
+		wantPVL    bool
+		wantChecks int32
+	}{
+		{name: "healthy", statuses: []int{200}, wantPVL: true, wantChecks: 1},
+		{name: "recovers", statuses: []int{503, 503, 200}, wantPVL: true, wantChecks: 3},
+		{name: "4xx", statuses: []int{403}, wantChecks: 1},
+		{name: "5xx", statuses: []int{503}, wantChecks: 3},
+		{name: "incomplete_body", statuses: []int{200}, incomplete: true, wantChecks: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetFeatureDBClientForTest(t)
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				index := int(requests.Add(1)) - 1
+				if tc.incomplete {
+					w.Header().Set("Content-Length", "10")
+					_, _ = io.WriteString(w, "short")
+					return
+				}
+				w.WriteHeader(tc.statuses[min(index, len(tc.statuses)-1)])
+			}))
+			defer server.Close()
+
+			const normalAddress = "http://normal.example.com"
+			InitFeatureDBClient(normalAddress, "token", strings.TrimPrefix(server.URL, "http://"), false)
+			client, err := GetFeatureDBClient()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := normalAddress
+			if tc.wantPVL {
+				want = server.URL
+			}
+			// Keep the server running so the request counter below stays
+			// authoritative: if any post-init health check is reintroduced,
+			// it would hit the live handler and inflate the count.
+			client.CheckVpcAddress()
+			client.Stop()
+			for _, check := range []bool{false, true} {
+				if got := client.GetCurrentAddress(check); got != want {
+					t.Fatalf("expected fixed address %q, got %q", want, got)
+				}
+			}
+			if got := requests.Load(); got != tc.wantChecks {
+				t.Fatalf("expected %d initialization checks only, got %d", tc.wantChecks, got)
+			}
+			if client.Client.Timeout != 0 {
+				t.Fatalf("business client timeout changed: %s", client.Client.Timeout)
+			}
+			transport := client.Client.Transport.(*http.Transport)
+			if transport.ResponseHeaderTimeout != 500*time.Millisecond || transport.MaxConnsPerHost != 1000 {
+				t.Fatal("business transport settings changed")
+			}
+		})
+	}
+}
+
+func TestFeatureDBHealthTimeout(t *testing.T) {
+	resetFeatureDBClientForTest(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	const normalAddress = "http://normal.example.com"
+	start := time.Now()
+	InitFeatureDBClient(normalAddress, "token", strings.TrimPrefix(server.URL, "http://"), false)
+	client, err := GetFeatureDBClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.GetCurrentAddress(false) != normalAddress || requests.Load() != vpcHealthCheckAttempts {
+		t.Fatal("expected normal address after three health timeouts")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("health checks took %s", elapsed)
+	}
+}
+
+func resetFeatureDBClientForTest(t *testing.T) {
+	t.Helper()
+	reset := func() {
+		client := featureDBClient.Swap(nil)
+		if client != nil {
+			client.Client.CloseIdleConnections()
+		}
+	}
+	reset()
+	t.Cleanup(reset)
 }
