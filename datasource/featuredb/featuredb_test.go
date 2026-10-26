@@ -93,7 +93,9 @@ func TestFeatureDBAddressSelection(t *testing.T) {
 			if tc.wantPVL {
 				want = server.URL
 			}
-			server.Close()
+			// Keep the server running so the request counter below stays
+			// authoritative: if any post-init health check is reintroduced,
+			// it would hit the live handler and inflate the count.
 			client.CheckVpcAddress()
 			client.Stop()
 			for _, check := range []bool{false, true} {
