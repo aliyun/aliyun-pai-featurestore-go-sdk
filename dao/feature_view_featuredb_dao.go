@@ -168,29 +168,14 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 			req.Header.Set("Auth", d.signature)
 			req.Header.Set("X-FeatureView-Weight", strconv.Itoa(weight))
 
-			response, err := d.featureDBClient.Client.Do(req)
+			response, err := d.featureDBClient.DoRead(req)
 			if err != nil {
 				if ctx.Err() != nil {
 					errChan <- ctx.Err()
-					return
-				}
-
-				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kv2?batch_size=%d&encoder=", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table, len(pkeys))
-				requestBody.Reset(body)
-				req, err = http.NewRequestWithContext(ctx, "POST", url, requestBody)
-				if err != nil {
+				} else {
 					errChan <- err
-					return
 				}
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Authorization", d.featureDBClient.Token)
-				req.Header.Set("Auth", d.signature)
-				req.Header.Set("X-FeatureView-Weight", strconv.Itoa(weight))
-				response, err = d.featureDBClient.Client.Do(req)
-				if err != nil {
-					errChan <- err
-					return
-				}
+				return
 			}
 			defer response.Body.Close() // 确保关闭response.Body
 			// 检查状态码
@@ -674,27 +659,14 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 		req.Header.Set("Authorization", d.featureDBClient.Token)
 		req.Header.Set("Auth", d.signature)
 
-		response, err := d.featureDBClient.Client.Do(req)
+		response, err := d.featureDBClient.DoRead(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				errChan <- ctx.Err()
-				return nil
-			}
-			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
-			req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-			if err != nil {
+			} else {
 				errChan <- err
-				return nil
 			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", d.featureDBClient.Token)
-			req.Header.Set("Auth", d.signature)
-			response, err = d.featureDBClient.Client.Do(req)
-
-			if err != nil {
-				errChan <- err
-				return nil
-			}
+			return nil
 		}
 		defer response.Body.Close()
 
@@ -992,27 +964,14 @@ func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ct
 		req.Header.Set("Authorization", d.featureDBClient.Token)
 		req.Header.Set("Auth", d.signature)
 
-		response, err := d.featureDBClient.Client.Do(req)
+		response, err := d.featureDBClient.DoRead(req)
 		if err != nil {
 			if ctx.Err() != nil {
 				errChan <- ctx.Err()
-				return nil
-			}
-			url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
-			req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-			if err != nil {
+			} else {
 				errChan <- err
-				return nil
 			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", d.featureDBClient.Token)
-			req.Header.Set("Auth", d.signature)
-			response, err = d.featureDBClient.Client.Do(req)
-
-			if err != nil {
-				errChan <- err
-				return nil
-			}
+			return nil
 		}
 		defer response.Body.Close() // 确保关闭response.Body
 		// 检查状态码
@@ -1265,26 +1224,14 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeatureWithContext(ctx context.
 			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
 
-			response, err = d.featureDBClient.Client.Do(req)
+			response, err = d.featureDBClient.DoRead(req)
 			if err != nil {
 				if ctx.Err() != nil {
 					errChan <- ctx.Err()
-					return nil
-				}
-				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/scan_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
-				req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-				if err != nil {
+				} else {
 					errChan <- err
-					return nil
 				}
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Authorization", d.featureDBClient.Token)
-				req.Header.Set("Auth", d.signature)
-				response, err = d.featureDBClient.Client.Do(req)
-				if err != nil {
-					errChan <- err
-					return nil
-				}
+				return nil
 			}
 		} else {
 			pks := make([]string, 0, len(events))
@@ -1306,26 +1253,14 @@ func (d *FeatureViewFeatureDBDao) GetUserBehaviorFeatureWithContext(ctx context.
 			req.Header.Set("Authorization", d.featureDBClient.Token)
 			req.Header.Set("Auth", d.signature)
 
-			response, err = d.featureDBClient.Client.Do(req)
+			response, err = d.featureDBClient.DoRead(req)
 			if err != nil {
 				if ctx.Err() != nil {
 					errChan <- ctx.Err()
-					return nil
-				}
-				url = fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/batch_get_kkv", d.featureDBClient.GetCurrentAddress(true), d.database, d.schema, d.table)
-				req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
-				if err != nil {
+				} else {
 					errChan <- err
-					return nil
 				}
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Authorization", d.featureDBClient.Token)
-				req.Header.Set("Auth", d.signature)
-				response, err = d.featureDBClient.Client.Do(req)
-				if err != nil {
-					errChan <- err
-					return nil
-				}
+				return nil
 			}
 		}
 

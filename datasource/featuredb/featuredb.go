@@ -2,32 +2,42 @@ package featuredb
 
 import (
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
+const (
+	vpcHealthCheckAttempts = 3
+	vpcHealthCheckInterval = 50 * time.Millisecond
+)
+
 type FeatureDBClient struct {
 	Client     *http.Client
+	readClient *http.Client
 	address    string
 	Token      string
 	vpcAddress string
 
-	useVpcAddress atomic.Bool
-	checkInterval time.Duration
-	stopChan      chan struct{}
+	selectedAddress string
 }
 
-// featureDBClient is a process-wide singleton. It is accessed concurrently
-// (e.g. GetLLMConfig fans out per-name via singleflight), so it is stored in an
-// atomic.Pointer to make reads lock-free and initialization race-free.
 var (
 	featureDBClient atomic.Pointer[FeatureDBClient]
+	initMu          sync.Mutex
 )
 
 func InitFeatureDBClient(address, token, vpcAddress string, isTestMode bool) {
-	// Fast path: already initialized by a previous caller.
+	if featureDBClient.Load() != nil {
+		return
+	}
+
+	initMu.Lock()
+	defer initMu.Unlock()
 	if featureDBClient.Load() != nil {
 		return
 	}
@@ -38,43 +48,45 @@ func InitFeatureDBClient(address, token, vpcAddress string, isTestMode bool) {
 		dialTimeout = 1000 * time.Millisecond
 		responseTimeout = 1000 * time.Millisecond
 	}
+	// 返回错误时，耗时不长的时候重试
 
-	client := &http.Client{
-		Transport: &http.Transport{
-			MaxConnsPerHost:     1000,
-			MaxIdleConns:        1000,
-			MaxIdleConnsPerHost: 1000,
-			DialContext: (&net.Dialer{
-				Timeout:   dialTimeout,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
-			ResponseHeaderTimeout: responseTimeout,
-			IdleConnTimeout:       90 * time.Second,
-		},
+	transport := &http.Transport{
+		MaxConnsPerHost:     1000,
+		MaxIdleConns:        1000,
+		MaxIdleConnsPerHost: 1000,
+		DialContext: (&net.Dialer{
+			Timeout:   dialTimeout,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		// 改成整体的timeout
+		ResponseHeaderTimeout: responseTimeout,
+		IdleConnTimeout:       90 * time.Second,
+	}
+	client := &http.Client{Transport: transport}
+	readClient := &http.Client{
+		Transport: transport,
+		Timeout:   responseTimeout,
 	}
 	newClient := &FeatureDBClient{
-		Client:        client,
-		address:       address,
-		Token:         token,
-		vpcAddress:    fmt.Sprintf("http://%s", vpcAddress),
-		checkInterval: 1 * time.Minute,
-		stopChan:      make(chan struct{}),
-	}
-
-	newClient.useVpcAddress.Store(false)
-
-	// Only the first caller wins the swap, guaranteeing the singleton is
-	// initialized once and the background goroutine is started at most once,
-	// even when multiple goroutines call InitFeatureDBClient concurrently.
-	if !featureDBClient.CompareAndSwap(nil, newClient) {
-		return
+		Client:          client,
+		readClient:      readClient,
+		address:         address,
+		Token:           token,
+		vpcAddress:      fmt.Sprintf("http://%s", vpcAddress),
+		selectedAddress: address,
 	}
 
 	if vpcAddress != "" {
-		newClient.CheckVpcAddress()
-
-		go newClient.backgroundCheckVpcAddress()
+		if err := newClient.selectVpcAddress(); err != nil {
+			log.Printf("FeatureDB uses normal address because PVL health check failed: %v", err)
+		} else {
+			log.Printf("FeatureDB uses PVL address")
+		}
+	} else {
+		log.Printf("FeatureDB uses normal address")
 	}
+
+	featureDBClient.Store(newClient)
 }
 
 func GetFeatureDBClient() (*FeatureDBClient, error) {
@@ -86,60 +98,82 @@ func GetFeatureDBClient() (*FeatureDBClient, error) {
 	return client, nil
 }
 
-func (f *FeatureDBClient) backgroundCheckVpcAddress() {
-	ticker := time.NewTicker(f.checkInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-f.stopChan:
-			return
-		case <-ticker.C:
-			f.CheckVpcAddress()
+func (f *FeatureDBClient) selectVpcAddress() error {
+	var lastErr error
+	for attempt := 0; attempt < vpcHealthCheckAttempts; attempt++ {
+		var retryable bool
+		retryable, lastErr = f.checkVpcAddress()
+		if lastErr == nil {
+			f.selectedAddress = f.vpcAddress
+			return nil
 		}
+		if !retryable || attempt == vpcHealthCheckAttempts-1 {
+			break
+		}
+		time.Sleep(vpcHealthCheckInterval)
 	}
+	return lastErr
 }
 
-func (f *FeatureDBClient) CheckVpcAddress() {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/health", f.vpcAddress), nil)
+func (f *FeatureDBClient) checkVpcAddress() (bool, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/health", f.vpcAddress), nil)
 	if err != nil {
-		f.useVpcAddress.Store(false)
-		return
+		return false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := f.Client.Do(req)
+	resp, err := f.readClient.Do(req)
 	if err != nil {
-		f.useVpcAddress.Store(false)
-		return
+		return true, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusOK {
-		f.useVpcAddress.Store(true)
-		return
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return true, err
 	}
-
-	f.useVpcAddress.Store(false)
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode >= http.StatusInternalServerError, fmt.Errorf("status code: %d", resp.StatusCode)
+	}
+	return false, nil
 }
 
-func (f *FeatureDBClient) GetCurrentAddress(check bool) string {
-	if f.vpcAddress == "" {
-		return f.address
+func (f *FeatureDBClient) DoRead(req *http.Request) (*http.Response, error) {
+	response, err := f.readClient.Do(req)
+	if err == nil || req.Context().Err() != nil {
+		return response, err
 	}
 
-	if check {
-		f.CheckVpcAddress()
+	retryReq, retryErr := cloneRequest(req)
+	if retryErr != nil {
+		return response, err
 	}
+	return f.readClient.Do(retryReq)
+}
 
-	if f.useVpcAddress.Load() {
-		return f.vpcAddress
-	} else {
-		return f.address
+func cloneRequest(req *http.Request) (*http.Request, error) {
+	retryReq := req.Clone(req.Context())
+	if req.Body == nil {
+		return retryReq, nil
 	}
+	if req.GetBody == nil {
+		return nil, fmt.Errorf("request body cannot be replayed")
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, err
+	}
+	retryReq.Body = body
+	return retryReq, nil
+}
+
+func (f *FeatureDBClient) GetCurrentAddress(_ bool) string {
+	return f.selectedAddress
 }
 
 func (f *FeatureDBClient) GetNormalAddress() string {
 	return f.address
 }
 
-func (f *FeatureDBClient) Stop() {
-	close(f.stopChan)
-}
+// Deprecated: the address is selected during initialization and remains fixed.
+func (f *FeatureDBClient) CheckVpcAddress() {}
+
+// Deprecated: FeatureDBClient no longer starts a background health check.
+func (f *FeatureDBClient) Stop() {}

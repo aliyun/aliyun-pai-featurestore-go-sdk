@@ -90,20 +90,9 @@ func TestBloomItems(project *domain.Project, featureView domain.FeatureView, req
 	req.Header.Set("Authorization", fdbClient.Token)
 	req.Header.Set("Auth", project.Signature)
 
-	response, err := fdbClient.Client.Do(req)
+	response, err := fdbClient.DoRead(req)
 	if err != nil {
-		req, err = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/test_bloom_items",
-			fdbClient.GetCurrentAddress(true), project.InstanceId, project.ProjectName, featureView.GetName()), bytes.NewReader(requestData))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fdbClient.Token)
-		req.Header.Set("Auth", project.Signature)
-		response, err = fdbClient.Client.Do(req)
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 
 	defer response.Body.Close()
