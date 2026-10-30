@@ -51,14 +51,24 @@ var iterateRetryTrackers = map[string]*struct {
 // iterate_get_kv.
 func TestMain(m *testing.M) {
 	srv := httptest.NewServer(http.HandlerFunc(fakeFeatureDBHandler))
-	featuredb.InitFeatureDBClient(srv.URL, "token", "", true)
+	pvl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || strings.HasSuffix(r.URL.Path, "/test_bloom_items") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	featuredb.InitFeatureDBClient(srv.URL, "token", strings.TrimPrefix(pvl.URL, "http://"), true)
 	code := m.Run()
+	pvl.Close()
 	srv.Close()
 	os.Exit(code)
 }
 
 func fakeFeatureDBHandler(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case strings.HasSuffix(r.URL.Path, "/bloom_write"), strings.HasSuffix(r.URL.Path, "/delete_bloom_key"):
+		w.WriteHeader(http.StatusOK)
 	case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/slow-snapshot/snapshots"):
 		<-r.Context().Done()
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/snapshots"):
@@ -232,6 +242,27 @@ func newFakeFeatureView(project *domain.Project, table string) domain.FeatureVie
 		Type:   constants.Feature_View_Type_Batch,
 		Fields: fakeViewFields(),
 	}, project, nil)
+}
+
+func TestBloomAddressRouting(t *testing.T) {
+	client, err := featuredb.GetFeatureDBClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.GetCurrentAddress(false) == client.GetNormalAddress() {
+		t.Fatal("expected distinct selected and normal addresses")
+	}
+	project := newFakeProject()
+	view := newFakeFeatureView(project, "bloom")
+	if err := BatchWriteBloomKV(project, view, &BatchWriteKVReqeust{}); err != nil {
+		t.Fatalf("Bloom write must use normal address: %v", err)
+	}
+	if _, err := TestBloomItems(project, view, &TestBloomItemsRequest{}); err != nil {
+		t.Fatalf("Bloom read must use selected address: %v", err)
+	}
+	if err := DeleteBloomByKey(project, view, "key"); err != nil {
+		t.Fatalf("Bloom delete must use normal address: %v", err)
+	}
 }
 
 func setShortPollInterval(t *testing.T) {

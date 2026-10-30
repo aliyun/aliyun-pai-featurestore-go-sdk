@@ -223,7 +223,7 @@ func (t *featureScanTable) createSnapshot(ctx context.Context) (string, int64, e
 // request, Arrow or decode error.
 func (t *featureScanTable) scan(ctx context.Context, snapshotId string, fn func(id string, properties map[string]interface{})) error {
 	req, err := t.newRequest(ctx, "GET", fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/snapshots/%s/scan",
-		t.client.GetCurrentAddress(false), t.database, t.schema, t.table, snapshotId))
+		t.client.GetNormalAddress(), t.database, t.schema, t.table, snapshotId))
 	if err != nil {
 		return err
 	}
