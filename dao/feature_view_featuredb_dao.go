@@ -283,7 +283,7 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 								case constants.FS_STRING:
 									properties[field] = dataCursor.ReadString()
 								case constants.FS_BINARY:
-									properties[field] = dataCursor.ReadBytes(int(dataCursor.ReadUint32()))
+									properties[field] = dataCursor.ReadBytesCopy(int(dataCursor.ReadUint32()))
 								case constants.FS_TIMESTAMP:
 									properties[field] = time.UnixMilli(dataCursor.ReadInt64())
 								case constants.FS_ARRAY_INT32:

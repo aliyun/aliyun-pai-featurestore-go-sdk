@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"math"
@@ -84,6 +85,7 @@ func (c *ByteCursor) ReadBool() bool {
 	return c.ReadUint8() == 1
 }
 
+// ReadBytes returns a slice aliasing c.Data; use ReadBytesCopy if the result outlives the buffer.
 func (c *ByteCursor) ReadBytes(n int) []byte {
 	if c.Err != nil {
 		return nil
@@ -98,6 +100,10 @@ func (c *ByteCursor) ReadBytes(n int) []byte {
 	v := c.Data[c.Off : c.Off+n]
 	c.Off += n
 	return v
+}
+
+func (c *ByteCursor) ReadBytesCopy(n int) []byte {
+	return bytes.Clone(c.ReadBytes(n))
 }
 
 func (c *ByteCursor) Skip(n int) {
