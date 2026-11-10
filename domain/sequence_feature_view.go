@@ -244,6 +244,7 @@ func (f *SequenceFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
 	}
 	sequenceConfig := f.sequenceConfig
+	sequenceConfig.SequenceDelimiter = opts.SequenceDelimiter
 	if opts.DlrmHSTU && sequenceConfig.DeduplicationMethodNum == 3 {
 		sequenceConfig.DlrmHSTU = true
 	}
@@ -288,10 +289,18 @@ func (f *SequenceFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}
 }
 
 func (f *SequenceFeatureView) GetOnlineAggregatedFeatures(joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
-	return f.GetOnlineAggregatedFeaturesWithContext(context.Background(), joinIds, features, alias)
+	return f.GetOnlineAggregatedFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{})
 }
 
 func (f *SequenceFeatureView) GetOnlineAggregatedFeaturesWithContext(ctx context.Context, joinIds []interface{}, features []string, alias map[string]string) (map[string]interface{}, error) {
+	return f.GetOnlineAggregatedFeaturesWithOptions(joinIds, features, alias, FeatureViewOptions{Ctx: ctx})
+}
+
+func (f *SequenceFeatureView) GetOnlineAggregatedFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) (map[string]interface{}, error) {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -300,6 +309,7 @@ func (f *SequenceFeatureView) GetOnlineAggregatedFeaturesWithContext(ctx context
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")
 	}
 	sequenceConfig := f.sequenceConfig
+	sequenceConfig.SequenceDelimiter = opts.SequenceDelimiter
 	onlineConfig := []*api.SeqConfig{}
 	seenFields := make(map[string]bool)
 

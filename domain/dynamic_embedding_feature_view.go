@@ -85,6 +85,10 @@ func (f *DynamicEmbeddingFeatureView) GetOnlineAggregatedFeaturesWithContext(ctx
 	return nil, errDynamicEmbeddingNotSupported
 }
 
+func (f *DynamicEmbeddingFeatureView) GetOnlineAggregatedFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) (map[string]interface{}, error) {
+	return nil, errDynamicEmbeddingNotSupported
+}
+
 func (f *DynamicEmbeddingFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
 	return nil, errDynamicEmbeddingNotSupported
 }

@@ -175,12 +175,16 @@ func makeSequenceFeatures(offlineSequences, onlineSequences []*sequenceInfo, seq
 		}
 	}
 
+	delimiter := sequenceConfig.SequenceDelimiter
+	if delimiter == "" {
+		delimiter = ";"
+	}
 	properties := make(map[string]interface{})
 	for key, value := range sequencesValueMap {
 		curSequenceSubName := (seqConfig.OnlineSeqName + "__" + key)
-		properties[curSequenceSubName] = strings.Join(value, ";")
+		properties[curSequenceSubName] = strings.Join(value, delimiter)
 	}
-	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], ";")
+	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], delimiter)
 
 	return properties
 
@@ -221,12 +225,16 @@ func makeSequenceFeatures4FeatureDB(sequencesInfos []*sequenceInfo, seqConfig *a
 
 	}
 
+	delimiter := sequenceConfig.SequenceDelimiter
+	if delimiter == "" {
+		delimiter = ";"
+	}
 	properties := make(map[string]interface{})
 	for key, value := range sequencesValueMap {
 		curSequenceSubName := (seqConfig.OnlineSeqName + "__" + key)
-		properties[curSequenceSubName] = strings.Join(value, ";")
+		properties[curSequenceSubName] = strings.Join(value, delimiter)
 	}
-	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], ";")
+	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], delimiter)
 
 	return properties
 
@@ -304,12 +312,16 @@ func makeSequenceFeatures4DlrmHSTU(sequencesInfos []*sequenceInfo, seqConfig *ap
 		}
 	}
 
+	delimiter := sequenceConfig.SequenceDelimiter
+	if delimiter == "" {
+		delimiter = ";"
+	}
 	properties := make(map[string]interface{})
 	for key, value := range sequencesValueMap {
 		curSequenceSubName := seqConfig.OnlineSeqName + "__" + key
-		properties[curSequenceSubName] = strings.Join(value, ";")
+		properties[curSequenceSubName] = strings.Join(value, delimiter)
 	}
-	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], ";")
+	properties[seqConfig.OnlineSeqName] = strings.Join(sequencesValueMap[sequenceConfig.ItemIdField], delimiter)
 
 	return properties
 }
