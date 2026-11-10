@@ -26,6 +26,8 @@ type FeatureViewDao interface {
 	GetUserSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) ([]map[string]interface{}, error)
 	GetUserAggregatedSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error)
 	GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error)
+	// WarmUpUserSequenceFeature returns immediately; the warm-up runs in the background, may be dropped under load, and is never retried.
+	WarmUpUserSequenceFeature(keys []interface{}, onlineConfig []*api.SeqConfig)
 
 	RowCount(string) int
 	RowCountIds(string) ([]string, int, error)
@@ -71,6 +73,8 @@ func (d *UnimplementedFeatureViewDao) GetUserAggregatedSequenceFeatureWithContex
 }
 func (d *UnimplementedFeatureViewDao) GetUserBehaviorFeatureWithContext(ctx context.Context, userIds []interface{}, events []interface{}, selectFields []string, sequenceConfig api.FeatureViewSeqConfig) ([]map[string]interface{}, error) {
 	return nil, nil
+}
+func (d *UnimplementedFeatureViewDao) WarmUpUserSequenceFeature(keys []interface{}, onlineConfig []*api.SeqConfig) {
 }
 
 func (d *UnimplementedFeatureViewDao) RowCount(string) int {
