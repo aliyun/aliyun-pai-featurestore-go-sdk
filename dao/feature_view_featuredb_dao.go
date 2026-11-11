@@ -283,7 +283,10 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 								case constants.FS_STRING:
 									properties[field] = dataCursor.ReadString()
 								case constants.FS_BINARY:
-									properties[field] = dataCursor.ReadBytes(int(dataCursor.ReadUint32()))
+									b := dataCursor.ReadBytes(int(dataCursor.ReadUint32()))
+									binValue := make([]byte, len(b))
+									copy(binValue, b)
+									properties[field] = binValue
 								case constants.FS_TIMESTAMP:
 									properties[field] = time.UnixMilli(dataCursor.ReadInt64())
 								case constants.FS_ARRAY_INT32:
@@ -2001,7 +2004,10 @@ func (d *FeatureViewFeatureDBDao) RowCountIds(filterExpr string) ([]string, int,
 				case constants.FS_STRING:
 					properties[field] = cursor.ReadString()
 				case constants.FS_BINARY:
-					properties[field] = cursor.ReadBytes(int(cursor.ReadUint32()))
+					b := cursor.ReadBytes(int(cursor.ReadUint32()))
+					binValue := make([]byte, len(b))
+					copy(binValue, b)
+					properties[field] = binValue
 				case constants.FS_TIMESTAMP:
 					properties[field] = time.UnixMilli(cursor.ReadInt64())
 				case constants.FS_ARRAY_INT32:
