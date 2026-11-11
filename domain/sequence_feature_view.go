@@ -304,6 +304,9 @@ func (f *SequenceFeatureView) GetOnlineAggregatedFeaturesWithOptions(joinIds []i
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if opts.DlrmHSTU {
+		return nil, errors.New("DlrmHSTU is not supported for aggregated sequence reads, please use GetOnlineFeaturesWithOptions")
+	}
 
 	if f.sequenceConfig.RegistrationMode == constants.Seq_Registration_Mode_Only_Behavior {
 		return nil, errors.New("only full_sequence registration mode supports GetOnlineFeatures, please use GetBehaviorFeatures")

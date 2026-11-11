@@ -525,7 +525,7 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequenceWithOptions(userId interf
 			var currentFeatures []map[string]interface{}
 			var err error
 			if featureView.GetType() == constants.Feature_View_Type_Sequence {
-				features, err = featureView.GetOnlineAggregatedFeaturesWithOptions(sequenceUserIds, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, SequenceDelimiter: opts.SequenceDelimiter})
+				features, err = featureView.GetOnlineAggregatedFeaturesWithOptions(sequenceUserIds, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, SequenceDelimiter: opts.SequenceDelimiter})
 			} else {
 				currentFeatures, err = featureView.GetOnlineFeaturesWithOptions([]interface{}{userId}, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, SequenceDelimiter: opts.SequenceDelimiter})
 				if len(currentFeatures) > 0 {
@@ -605,7 +605,7 @@ func (m *Model) GetOnlineFeaturesWithAggregatedSequenceWithOptions(userId interf
 						childWg.Add(1)
 						go func(featureView FeatureView, joinId string, keys []interface{}, featureViewCount int) {
 							defer childWg.Done()
-							features, err := featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, SequenceDelimiter: opts.SequenceDelimiter, count: featureViewCount})
+							features, err := featureView.GetOnlineFeaturesWithOptions(keys, m.featureNamesMap[featureView.GetName()], m.aliasNamesMap[featureView.GetName()], FeatureViewOptions{Ctx: ctx, DlrmHSTU: opts.DlrmHSTU, SequenceDelimiter: opts.SequenceDelimiter, count: featureViewCount})
 							if err != nil {
 								childErrOnce.Do(func() { childFirstErr = err })
 								return

@@ -89,6 +89,24 @@ func TestSequenceFeatureViewReadOptions(t *testing.T) {
 	}
 }
 
+func TestSequenceFeatureViewAggregatedRejectsDlrmHSTU(t *testing.T) {
+	d := &sequenceRecordingDao{}
+	f := &SequenceFeatureView{
+		featureViewDao: d,
+		sequenceConfig: api.FeatureViewSeqConfig{
+			DeduplicationMethodNum: 3,
+			SeqConfig:              []*api.SeqConfig{{OnlineSeqName: "seq"}},
+		},
+	}
+	_, err := f.GetOnlineAggregatedFeaturesWithOptions([]interface{}{"a", "b"}, []string{"seq"}, nil, FeatureViewOptions{DlrmHSTU: true})
+	if err == nil || err.Error() != "DlrmHSTU is not supported for aggregated sequence reads, please use GetOnlineFeaturesWithOptions" {
+		t.Fatalf("expected DlrmHSTU rejection, got %v", err)
+	}
+	if d.ctx != nil {
+		t.Fatal("unsupported option should be rejected before calling the DAO")
+	}
+}
+
 func TestModelSequenceDelimiter(t *testing.T) {
 	for _, method := range []string{"normal", "entity", "aggregated"} {
 		for _, child := range []bool{false, true} {
@@ -149,6 +167,25 @@ func TestModelSequenceDelimiter(t *testing.T) {
 					t.Fatalf("options or keys not propagated: config=%+v, keys=%v, want keys=%v", d.config, d.keys, wantKeys)
 				}
 				if method == "aggregated" {
+					opts.DlrmHSTU = true
+					f.sequenceConfig.DeduplicationMethodNum = 3
+					d.ctx = nil
+					_, err = m.GetOnlineFeaturesWithAggregatedSequenceWithOptions("a", []interface{}{"a", "b"}, "user", opts)
+					if child {
+						if err != nil || d.ctx != ctx || !d.config.DlrmHSTU || d.config.SequenceDelimiter != "::" {
+							t.Fatalf("child sequence should honor DlrmHSTU: config=%+v, err=%v", d.config, err)
+						}
+						if f.sequenceConfig.DlrmHSTU {
+							t.Fatal("shared sequence config was modified")
+						}
+					} else {
+						if err == nil || err.Error() != "DlrmHSTU is not supported for aggregated sequence reads, please use GetOnlineFeaturesWithOptions" {
+							t.Fatalf("expected DlrmHSTU rejection, got %v", err)
+						}
+						if d.ctx != nil {
+							t.Fatal("unsupported option should be rejected before calling the DAO")
+						}
+					}
 					_, err = m.GetOnlineFeaturesWithAggregatedSequence("a", []interface{}{"a", "b"}, "user")
 					if err != nil || d.config.SequenceDelimiter != "" {
 						t.Fatalf("legacy aggregate should use default delimiter: config=%+v, err=%v", d.config, err)
