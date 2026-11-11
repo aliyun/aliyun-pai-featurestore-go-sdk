@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
@@ -21,6 +23,8 @@ type SequenceFeatureView struct {
 	sequenceConfig           api.FeatureViewSeqConfig
 	featureViewDao           dao.FeatureViewDao
 	offline_2_online_seq_map map[string]string
+	seqConfigsWithFilter     []*api.SeqConfig
+	seqConfigsWithoutFilter  []*api.SeqConfig
 }
 
 func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEntity) *SequenceFeatureView {
@@ -83,6 +87,21 @@ func NewSequenceFeatureView(view *api.FeatureView, p *Project, entity *FeatureEn
 			uniqueSeqConfigs = append(uniqueSeqConfigs, seqConfig)
 		}
 		sequenceFeatureView.sequenceConfig.SeqConfig = uniqueSeqConfigs
+	}
+
+	// 过滤字段按名称排序去重后的下标即为 filter_index，未配置过滤字段为 -1
+	filterFieldSet := make(map[string]struct{})
+	for _, sc := range sequenceFeatureView.sequenceConfig.SeqConfig {
+		if sc.FilterField != "" {
+			filterFieldSet[sc.FilterField] = struct{}{}
+			sequenceFeatureView.seqConfigsWithFilter = append(sequenceFeatureView.seqConfigsWithFilter, sc)
+		} else {
+			sequenceFeatureView.seqConfigsWithoutFilter = append(sequenceFeatureView.seqConfigsWithoutFilter, sc)
+		}
+	}
+	sortedFilterFields := slices.Sorted(maps.Keys(filterFieldSet))
+	for _, sc := range sequenceFeatureView.sequenceConfig.SeqConfig {
+		sc.FilterIndex = slices.Index(sortedFilterFields, sc.FilterField)
 	}
 
 	requiredElements1 := []string{"user_id", "item_id", "event"}
@@ -248,11 +267,16 @@ func (f *SequenceFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}
 		sequenceConfig.DlrmHSTU = true
 	}
 	onlineConfig := []*api.SeqConfig{}
+	var warmUpConfig []*api.SeqConfig
 	seenFields := make(map[string]bool)
 
 	for _, feature := range features {
 		if feature == "*" {
-			onlineConfig = sequenceConfig.SeqConfig
+			if opts.HardSearch {
+				onlineConfig, warmUpConfig = f.seqConfigsWithoutFilter, f.seqConfigsWithFilter
+			} else {
+				onlineConfig = sequenceConfig.SeqConfig
+			}
 			break
 		} else {
 			found := false
@@ -260,7 +284,11 @@ func (f *SequenceFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}
 				if seqConfig.OnlineSeqName == feature {
 					found = true
 					if !seenFields[feature] {
-						onlineConfig = append(onlineConfig, seqConfig)
+						if opts.HardSearch && seqConfig.FilterField != "" {
+							warmUpConfig = append(warmUpConfig, seqConfig)
+						} else {
+							onlineConfig = append(onlineConfig, seqConfig)
+						}
 						seenFields[feature] = true
 					}
 					break
@@ -270,6 +298,13 @@ func (f *SequenceFeatureView) GetOnlineFeaturesWithOptions(joinIds []interface{}
 				return nil, fmt.Errorf("sequence feature name :%s not found in feature view config", feature)
 			}
 		}
+	}
+
+	if len(warmUpConfig) > 0 {
+		if !f.GetIsWriteToFeatureDB() {
+			return nil, errors.New("HardSearch is only supported by FeatureDB-backed sequence feature views")
+		}
+		f.featureViewDao.WarmUpUserSequenceFeature(joinIds, warmUpConfig)
 	}
 
 	sequenceFeatureResults, err := f.featureViewDao.GetUserSequenceFeatureWithContext(ctx, joinIds, f.userIdField, sequenceConfig, onlineConfig)
@@ -401,6 +436,11 @@ func (f *SequenceFeatureView) GetFeatureEntityName() string {
 
 func (f *SequenceFeatureView) GetType() string {
 	return f.Type
+}
+
+// GetSequenceConfig returns the parsed sequence metadata with derived filter indexes.
+func (f *SequenceFeatureView) GetSequenceConfig() api.FeatureViewSeqConfig {
+	return f.sequenceConfig
 }
 
 func (f *SequenceFeatureView) Offline2Online(input string) string {

@@ -12,6 +12,7 @@ import (
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/constants"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
 	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb/fdbserverfb"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/utils"
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
@@ -176,14 +177,11 @@ func TestGetFeaturesBinaryIsIndependentCopy(t *testing.T) {
 			if !bytes.Equal(got, want) {
 				t.Fatalf("row %d: bin = %v, want %v", i, got, want)
 			}
-			// The fix copies into a right-sized slice: cap == len. An alias
-			// into the row/block buffer has cap > len (spare capacity reaching
-			// past the value), which is exactly the BLK-1 hazard.
-			if cap(got) != len(got) {
-				t.Fatalf("row %d: cap(bin)=%d != len(bin)=%d — value aliases the block buffer", i, cap(got), len(got))
-			}
 		}
-		// Appending to one row's value must not disturb the other row's value.
+		// The value must be an independent copy, not an alias into the block
+		// buffer: appending to one row's value must not disturb another row's.
+		// Capacity may exceed len due to allocation rounding (e.g. bytes.Clone),
+		// so independence is asserted by mutation rather than by cap == len.
 		b0 := res[0]["bin"].([]byte)
 		b0 = append(b0, 0xFF, 0xFF, 0xFF, 0xFF)
 		_ = b0
@@ -222,4 +220,31 @@ func TestGetFeaturesBinaryIsIndependentCopy(t *testing.T) {
 			t.Fatalf("expected error for oversized binary length, got nil (res=%v)", res)
 		}
 	})
+}
+
+// TestReadBytesCopyIndependent locks the copy primitive used by the FS_BINARY
+// decode branch: the result must not alias the source buffer, regardless of how
+// the copy rounds capacity (make+copy or bytes.Clone).
+func TestReadBytesCopyIndependent(t *testing.T) {
+	src := []byte{1, 2, 3, 4, 9, 8, 7, 6}
+	cursor := utils.NewByteCursor(src)
+	got := cursor.ReadBytesCopy(4)
+	if cursor.Err != nil {
+		t.Fatalf("ReadBytesCopy: %v", cursor.Err)
+	}
+	if !bytes.Equal(got, []byte{1, 2, 3, 4}) {
+		t.Fatalf("got %v, want [1 2 3 4]", got)
+	}
+	// Mutating the source must not change the copied value.
+	for i := range src {
+		src[i] = 0xFF
+	}
+	if !bytes.Equal(got, []byte{1, 2, 3, 4}) {
+		t.Fatalf("copy aliases source: got %v after source mutation", got)
+	}
+	// Appending to the copy must not write into the source buffer.
+	got = append(got, 0xAA)
+	if src[4] != 0xFF {
+		t.Fatalf("append wrote into source buffer: src[4]=%d", src[4])
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aliyun/aliyun-odps-go-sdk/arrow/array"
@@ -283,10 +284,7 @@ func (d *FeatureViewFeatureDBDao) GetFeaturesWithContext(ctx context.Context, ke
 								case constants.FS_STRING:
 									properties[field] = dataCursor.ReadString()
 								case constants.FS_BINARY:
-									b := dataCursor.ReadBytes(int(dataCursor.ReadUint32()))
-									binValue := make([]byte, len(b))
-									copy(binValue, b)
-									properties[field] = binValue
+									properties[field] = dataCursor.ReadBytesCopy(int(dataCursor.ReadUint32()))
 								case constants.FS_TIMESTAMP:
 									properties[field] = time.UnixMilli(dataCursor.ReadInt64())
 								case constants.FS_ARRAY_INT32:
@@ -938,6 +936,80 @@ func (d *FeatureViewFeatureDBDao) GetUserSequenceFeatureWithContext(ctx context.
 	}
 
 	return results, nil
+}
+
+type FeatureDBWarmUpKKVRequest struct {
+	PKs []string `json:"pks"`
+}
+
+// warmUpSlots caps in-flight warm-ups process-wide so they cannot crowd online reads out of the shared connection pool.
+var warmUpSlots = make(chan struct{}, 100)
+
+var warmUpLastLogUnix atomic.Int64
+
+// warmUpLogAllowed limits warm-up failure logs to one line per minute per process.
+func warmUpLogAllowed() bool {
+	now := time.Now().Unix()
+	last := warmUpLastLogUnix.Load()
+	return now-last >= 60 && warmUpLastLogUnix.CompareAndSwap(last, now)
+}
+
+func (d *FeatureViewFeatureDBDao) WarmUpUserSequenceFeature(keys []interface{}, onlineConfig []*api.SeqConfig) {
+	for _, key := range keys {
+		select {
+		case warmUpSlots <- struct{}{}:
+		default:
+			if warmUpLogAllowed() {
+				log.Printf("featuredb warm_up_kkv dropped, table: %s, error: %d warm-ups already in flight", d.table, cap(warmUpSlots))
+			}
+			return
+		}
+		go func(key interface{}) {
+			defer func() { <-warmUpSlots }()
+
+			pks := []string{}
+			seenPks := make(map[string]struct{})
+			for _, seqConfig := range onlineConfig {
+				for _, event := range strings.Split(seqConfig.SeqEvent, "|") {
+					pk := fmt.Sprintf("%v\u001D%s", key, event)
+					if _, seen := seenPks[pk]; !seen {
+						seenPks[pk] = struct{}{}
+						pks = append(pks, pk)
+					}
+				}
+			}
+			if len(pks) == 0 {
+				return
+			}
+
+			body, _ := json.Marshal(FeatureDBWarmUpKKVRequest{PKs: pks})
+			url := fmt.Sprintf("%s/api/v1/tables/%s/%s/%s/warm_up_kkv", d.featureDBClient.GetCurrentAddress(false), d.database, d.schema, d.table)
+			req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+			if err != nil {
+				if warmUpLogAllowed() {
+					log.Printf("featuredb warm_up_kkv failed, table: %s, error: %v", d.table, err)
+				}
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", d.featureDBClient.Token)
+			req.Header.Set("Auth", d.signature)
+
+			response, err := d.featureDBClient.Client.Do(req)
+			if err != nil {
+				if warmUpLogAllowed() {
+					log.Printf("featuredb warm_up_kkv failed, table: %s, error: %v", d.table, err)
+				}
+				return
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK && warmUpLogAllowed() {
+				respBody, _ := io.ReadAll(response.Body)
+				log.Printf("featuredb warm_up_kkv failed, table: %s, StatusCode: %d, response: %s", d.table, response.StatusCode, respBody)
+			}
+			io.Copy(io.Discard, response.Body)
+		}(key)
+	}
 }
 
 func (d *FeatureViewFeatureDBDao) GetUserAggregatedSequenceFeatureWithContext(ctx context.Context, keys []interface{}, userIdField string, sequenceConfig api.FeatureViewSeqConfig, onlineConfig []*api.SeqConfig) (map[string]interface{}, error) {
