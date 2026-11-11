@@ -457,7 +457,7 @@ func decodeFeatureDBRow(dataBytes []byte, fields []string, fieldTypes map[string
 				values[i] = int8(value)
 			}
 			properties[field] = values
-		case constants.FS_ARRAY_UINT8:
+		case constants.FS_ARRAY_UINT8, constants.FS_BINARY:
 			raw := dataCursor.ReadBytes(int(dataCursor.ReadUint32()))
 			values := make([]uint8, len(raw))
 			copy(values, raw)
@@ -539,7 +539,7 @@ func skipFeatureDBValue(dataCursor *utils.ByteCursor, fsType constants.FSType) {
 		dataCursor.Skip(4)
 	case constants.FS_BOOLEAN:
 		dataCursor.Skip(1)
-	case constants.FS_STRING, constants.FS_ARRAY_INT8, constants.FS_ARRAY_UINT8:
+	case constants.FS_STRING, constants.FS_ARRAY_INT8, constants.FS_ARRAY_UINT8, constants.FS_BINARY:
 		dataCursor.Skip(int(dataCursor.ReadUint32()))
 	case constants.FS_ARRAY_INT32, constants.FS_ARRAY_FLOAT:
 		dataCursor.Skip(int(dataCursor.ReadUint32()) * 4)
