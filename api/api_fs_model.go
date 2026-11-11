@@ -121,6 +121,8 @@ func (a *FsModelApiService) GetModelByID(modelId string) (GetModelResponse, erro
 			feature.Type = int32(constants.FS_ARRAY_INT8)
 		case "ARRAY<UINT8>":
 			feature.Type = int32(constants.FS_ARRAY_UINT8)
+		case "BINARY":
+			feature.Type = int32(constants.FS_BINARY)
 		default:
 			feature.Type = int32(constants.FS_STRING)
 		}

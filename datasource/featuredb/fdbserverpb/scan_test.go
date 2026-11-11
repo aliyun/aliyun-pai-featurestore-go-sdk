@@ -99,6 +99,7 @@ func fakeViewFields() []*api.FeatureViewFields {
 		{Name: "n", Type: constants.FS_DOUBLE},
 		{Name: "m", Type: constants.FS_MAP_STRING_INT32},
 		{Name: "i8", Type: constants.FS_ARRAY_INT8},
+		{Name: "b", Type: constants.FS_BINARY},
 		{Name: "u8", Type: constants.FS_ARRAY_UINT8},
 	}
 }
@@ -111,11 +112,12 @@ var fakeRowWant = map[string]interface{}{
 	"a":  []int64{1, 2},
 	"m":  map[string]int32{"k": 7},
 	"i8": []int8{-1, 2},
+	"b":  []byte{0xAB, 0xCD},
 	"u8": []uint8{1, 255},
 }
 
 // encodeFakeRow encodes a row in the FeatureDB F/1 protocol, in the field
-// order v, s, et, a, n, m, i8, u8 with n being null.
+// order v, s, et, a, n, m, i8, b, u8 with n being null.
 func encodeFakeRow() []byte {
 	var buf bytes.Buffer
 	buf.WriteByte(featureDBProtocolVersionF)
@@ -149,6 +151,10 @@ func encodeFakeRow() []byte {
 	buf.WriteByte(0)
 	w(uint32(2))
 	buf.Write([]byte{0xff, 2})
+	// b
+	buf.WriteByte(0)
+	w(uint32(2))
+	buf.Write([]byte{0xAB, 0xCD})
 	// u8
 	buf.WriteByte(0)
 	w(uint32(2))
@@ -305,6 +311,111 @@ func TestDecodeFeatureDBRowSelected(t *testing.T) {
 	}
 }
 
+// TestDecodeFeatureDBRowBinary verifies FS_BINARY decodes to an independent
+// []byte (not an alias into the row buffer), handles zero-length and null
+// values, skips correctly, and rejects truncated or forged oversized lengths
+// without allocating from the untrusted prefix.
+func TestDecodeFeatureDBRowBinary(t *testing.T) {
+	fields := []string{"b", "z"}
+	fieldTypes := map[string]constants.FSType{"b": constants.FS_BINARY, "z": constants.FS_INT64}
+
+	// encode builds a row [b binary, z int64] with the given binary payload.
+	encode := func(payload []byte) []byte {
+		var row valueWriter
+		row.WriteByte(featureDBProtocolVersionF)
+		row.WriteByte(featureDBIfNullFlagVersion1)
+		row.WriteByte(0)
+		row.put(uint32(len(payload)))
+		row.Write(payload)
+		row.WriteByte(0)
+		row.put(int64(42))
+		return row.Bytes()
+	}
+
+	t.Run("independent copy", func(t *testing.T) {
+		data := encode([]byte{1, 2, 3, 4})
+		got, err := decodeFeatureDBRow(data, fields, fieldTypes, nil)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		b, ok := got["b"].([]byte)
+		if !ok {
+			t.Fatalf("b is %T, want []byte", got["b"])
+		}
+		if !bytes.Equal(b, []byte{1, 2, 3, 4}) {
+			t.Fatalf("b = %v, want [1 2 3 4]", b)
+		}
+		if cap(b) != len(b) {
+			t.Fatalf("cap(b)=%d != len(b)=%d — value aliases the row buffer", cap(b), len(b))
+		}
+		// Mutating the source row must not change the decoded value.
+		for i := range data {
+			data[i] = 0xFF
+		}
+		if !bytes.Equal(b, []byte{1, 2, 3, 4}) {
+			t.Fatalf("b changed after source mutation: %v", b)
+		}
+	})
+
+	t.Run("zero length", func(t *testing.T) {
+		got, err := decodeFeatureDBRow(encode([]byte{}), fields, fieldTypes, nil)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		b, ok := got["b"].([]byte)
+		if !ok || len(b) != 0 {
+			t.Fatalf("expected empty []byte, got %T %v", got["b"], got["b"])
+		}
+	})
+
+	t.Run("null omitted", func(t *testing.T) {
+		var row valueWriter
+		row.WriteByte(featureDBProtocolVersionF)
+		row.WriteByte(featureDBIfNullFlagVersion1)
+		row.WriteByte(1) // b is null
+		row.WriteByte(0)
+		row.put(int64(42))
+		got, err := decodeFeatureDBRow(row.Bytes(), fields, fieldTypes, nil)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if _, exists := got["b"]; exists {
+			t.Fatalf("null binary must be omitted, got %#v", got["b"])
+		}
+		if got["z"] != int64(42) {
+			t.Fatalf("z = %#v, want 42", got["z"])
+		}
+	})
+
+	t.Run("skip then read trailing", func(t *testing.T) {
+		got, err := decodeFeatureDBRow(encode([]byte{1, 2, 3, 4}), fields, fieldTypes, map[string]bool{"z": true})
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if want := map[string]interface{}{"z": int64(42)}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("truncated rejected", func(t *testing.T) {
+		data := encode([]byte{1, 2, 3, 4})
+		if _, err := decodeFeatureDBRow(data[:len(data)-1], fields, fieldTypes, nil); err == nil {
+			t.Fatal("expected error for truncated binary payload")
+		}
+	})
+
+	t.Run("forged oversized length rejected", func(t *testing.T) {
+		var row valueWriter
+		row.WriteByte(featureDBProtocolVersionF)
+		row.WriteByte(featureDBIfNullFlagVersion1)
+		row.WriteByte(0)
+		row.put(uint32(0xFFFFFFF0)) // ~4GiB declared, no payload
+		if _, err := decodeFeatureDBRow(row.Bytes(), fields, fieldTypes, nil); err == nil {
+			t.Fatal("expected error for oversized binary length")
+		}
+	})
+}
+
 // valueWriter encodes FeatureDB F/1 values in little endian.
 type valueWriter struct{ bytes.Buffer }
 
@@ -368,6 +479,7 @@ func skipValueCases() []skipValueCase {
 		{"array string", constants.FS_ARRAY_STRING, arrayOf("string")},
 		{"array int8", constants.FS_ARRAY_INT8, func(w *valueWriter) { w.put(uint32(2)); w.Write([]byte{0xff, 1}) }},
 		{"array uint8", constants.FS_ARRAY_UINT8, func(w *valueWriter) { w.put(uint32(2)); w.Write([]byte{1, 0xff}) }},
+		{"binary", constants.FS_BINARY, func(w *valueWriter) { w.put(uint32(2)); w.Write([]byte{1, 0xff}) }},
 		{"array array float", constants.FS_ARRAY_ARRAY_FLOAT, func(w *valueWriter) {
 			w.put(uint32(2))
 			w.put(uint32(3))
@@ -505,7 +617,7 @@ func TestFeatureScanTableMatchesFeatureViewDao(t *testing.T) {
 	featureView := newFakeFeatureView(project, "table")
 	scanTable := newFeatureScanTable(nil, project, featureView)
 
-	wantFields := []string{"v", "s", "et", "a", "n", "m", "i8", "u8"}
+	wantFields := []string{"v", "s", "et", "a", "n", "m", "i8", "b", "u8"}
 	if !reflect.DeepEqual(scanTable.fields, wantFields) {
 		t.Fatalf("fields = %v, want %v", scanTable.fields, wantFields)
 	}
