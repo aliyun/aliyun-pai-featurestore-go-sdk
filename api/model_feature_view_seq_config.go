@@ -13,6 +13,7 @@ type FeatureViewSeqConfig struct {
 	DeduplicationMethodNum        int          `json:"-"`
 	CustomDeduplicationField      string       `json:"custom_deduplication_field,omitempty"`
 	DlrmHSTU                      bool         `json:"-"`
+	SequenceDelimiter             string       `json:"-"`
 	OfflineSeqTableName           string       `json:"offline_seq_table_name"`
 	OfflineSeqTablePkField        string       `json:"offline_seq_table_pk_field"`
 	OfflineSeqTableEventTimeField string       `json:"offline_seq_table_event_time_field"`

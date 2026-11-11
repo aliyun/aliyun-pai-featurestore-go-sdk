@@ -234,6 +234,10 @@ func (f *BaseFeatureView) GetOnlineAggregatedFeaturesWithContext(ctx context.Con
 	return nil, errors.New("only sequence feature view supports GetOnlineAggregatedFeatures")
 }
 
+func (f *BaseFeatureView) GetOnlineAggregatedFeaturesWithOptions(joinIds []interface{}, features []string, alias map[string]string, opts FeatureViewOptions) (map[string]interface{}, error) {
+	return nil, errors.New("only sequence feature view supports GetOnlineAggregatedFeatures")
+}
+
 func (f *BaseFeatureView) GetBehaviorFeatures(userIds []interface{}, events []interface{}, features []string) ([]map[string]interface{}, error) {
 	return nil, errors.New("only sequence feature view supports GetBehaviorFeatures")
 }
