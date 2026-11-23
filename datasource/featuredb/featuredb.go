@@ -1,6 +1,7 @@
 package featuredb
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -18,6 +20,7 @@ const (
 
 type FeatureDBClient struct {
 	Client     *http.Client
+	readClient *http.Client
 	address    string
 	Token      string
 	vpcAddress string
@@ -62,7 +65,11 @@ func InitFeatureDBClient(address, token, vpcAddress string, isTestMode bool) {
 		},
 	}
 	newClient := &FeatureDBClient{
-		Client:          client,
+		Client: client,
+		readClient: &http.Client{
+			Transport: client.Transport,
+			Timeout:   responseTimeout,
+		},
 		address:         address,
 		Token:           token,
 		vpcAddress:      fmt.Sprintf("http://%s", vpcAddress),
@@ -127,6 +134,35 @@ func (f *FeatureDBClient) checkVpcAddress(client *http.Client) (bool, error) {
 		return resp.StatusCode >= http.StatusInternalServerError, fmt.Errorf("status code: %d", resp.StatusCode)
 	}
 	return false, nil
+}
+
+func (f *FeatureDBClient) DoRead(req *http.Request) (*http.Response, error) {
+	start := time.Now()
+	response, err := f.readClient.Do(req)
+	if req.Context().Err() != nil || !shouldRetryRead(err, time.Since(start), f.readClient.Timeout) {
+		return response, err
+	}
+
+	retryReq := req.Clone(req.Context())
+	if req.Body != nil {
+		if req.GetBody == nil {
+			return response, err
+		}
+		body, bodyErr := req.GetBody()
+		if bodyErr != nil {
+			return response, err
+		}
+		retryReq.Body = body
+	}
+	return f.readClient.Do(retryReq)
+}
+
+func shouldRetryRead(err error, elapsed, timeout time.Duration) bool {
+	if elapsed >= timeout/2 {
+		return false
+	}
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE)
 }
 
 func (f *FeatureDBClient) GetCurrentAddress(_ bool) string {

@@ -1,9 +1,18 @@
 package dao
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/api"
+	"github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2/datasource/featuredb"
 )
 
 // newTestFeatureDBDao builds a FeatureViewFeatureDBDao with only the async
@@ -121,6 +130,100 @@ func TestFeatureDBDaoCloseIdempotent(t *testing.T) {
 func TestFeatureDBDaoCloseNilReceiver(t *testing.T) {
 	var d *FeatureViewFeatureDBDao
 	d.Close() // must not panic
+}
+
+func TestFeatureDBOnlineReadReturnsHTTPError(t *testing.T) {
+	var normalRequests, selectedRequests atomic.Int32
+	normalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		normalRequests.Add(1)
+		if strings.HasSuffix(r.URL.Path, "/snapshots") {
+			_, _ = io.WriteString(w, `{"data":{"snapshot_id":"snapshot","ts":1}}`)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"message":"unavailable"}`)
+	}))
+	defer normalServer.Close()
+	selectedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			return
+		}
+		selectedRequests.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"message":"unavailable"}`)
+	}))
+	defer selectedServer.Close()
+	featuredb.InitFeatureDBClient(normalServer.URL, "token", strings.TrimPrefix(selectedServer.URL, "http://"), false)
+	client, err := featuredb.GetFeatureDBClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &FeatureViewFeatureDBDao{
+		featureDBClient: client,
+		database:        "database",
+		schema:          "schema",
+		table:           "table",
+		signature:       "signature",
+		primaryKeyField: "id",
+	}
+	ctx := context.Background()
+	keys := []interface{}{"user"}
+	seqConfig := api.FeatureViewSeqConfig{}
+	onlineConfig := []*api.SeqConfig{{SeqEvent: "click", SeqLen: 1, OnlineSeqName: "sequence"}}
+	for _, tc := range []struct {
+		name           string
+		read           func() error
+		normalRequests int32
+	}{
+		{name: "kv", read: func() error {
+			_, err := d.GetFeaturesWithContext(ctx, keys, nil, 1)
+			return err
+		}},
+		{name: "sequence", read: func() error {
+			_, err := d.GetUserSequenceFeatureWithContext(ctx, keys, "user_id", seqConfig, onlineConfig)
+			return err
+		}},
+		{name: "aggregated_sequence", read: func() error {
+			_, err := d.GetUserAggregatedSequenceFeatureWithContext(ctx, keys, "user_id", seqConfig, onlineConfig)
+			return err
+		}},
+		{name: "behavior_scan", read: func() error {
+			_, err := d.GetUserBehaviorFeatureWithContext(ctx, keys, nil, nil, seqConfig)
+			return err
+		}},
+		{name: "behavior_batch", read: func() error {
+			_, err := d.GetUserBehaviorFeatureWithContext(ctx, keys, []interface{}{"click"}, nil, seqConfig)
+			return err
+		}},
+		{name: "direct_write", read: func() error {
+			return d.WriteFeaturesDirect([]map[string]interface{}{{"id": "user"}})
+		}},
+		{name: "write", normalRequests: 1, read: func() error {
+			return d.writeFeatureDB([]map[string]interface{}{{"id": "user"}})
+		}},
+		{name: "snapshot_scan", normalRequests: 2, read: func() error {
+			_, _, err := d.RowCountIds("")
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			beforeNormal, beforeSelected := normalRequests.Load(), selectedRequests.Load()
+			err := tc.read()
+			if err == nil || !strings.Contains(err.Error(), "503") || !strings.Contains(err.Error(), "unavailable") {
+				t.Fatalf("expected status and response message in error, got %v", err)
+			}
+			wantSelected := int32(0)
+			if tc.normalRequests == 0 {
+				wantSelected = 1
+			}
+			if got := normalRequests.Load() - beforeNormal; got != tc.normalRequests {
+				t.Fatalf("expected %d normal address requests, got %d", tc.normalRequests, got)
+			}
+			if got := selectedRequests.Load() - beforeSelected; got != wantSelected {
+				t.Fatalf("expected %d selected address requests, got %d", wantSelected, got)
+			}
+		})
+	}
 }
 
 func waitTimeout(t *testing.T, wg *sync.WaitGroup, timeout time.Duration, msg string) {
