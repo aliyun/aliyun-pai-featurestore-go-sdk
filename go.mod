@@ -1,6 +1,6 @@
 module github.com/aliyun/aliyun-pai-featurestore-go-sdk/v2
 
-go 1.24
+go 1.25.0
 
 require (
 	fortio.org/assert v1.2.1
@@ -41,7 +41,7 @@ require (
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.43.0 // indirect
-	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
