@@ -149,6 +149,8 @@ func (a *FeatureViewApiService) GetFeatureViewByID(featureViewId string) (GetFea
 				field.IsEventTime = true
 			case "SubKey":
 				field.IsSubKey = true
+			case "Embedding":
+				field.IsEmbedding = true
 			}
 		}
 
