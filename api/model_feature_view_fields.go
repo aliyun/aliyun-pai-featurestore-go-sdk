@@ -9,6 +9,7 @@ type FeatureViewFields struct {
 	IsPrimaryKey bool             `json:"is_primary_key,omitempty"`
 	IsEventTime  bool             `json:"is_event_time,omitempty"`
 	IsSubKey     bool             `json:"is_sub_key,omitempty"`
+	IsEmbedding  bool             `json:"is_embedding,omitempty"`
 	Dimension    int32            `json:"dimension,omitempty"`
 	Position     int              `json:"position,omitempty"`
 }
